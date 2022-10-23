@@ -5,8 +5,8 @@ BIN_DIR := bin
 SRC := $(wildcard $(SRC_DIR)/*.[cS])
 OBJ := $(patsubst $(SRC_DIR)/%, $(OBJ_DIR)/%.o, $(SRC))
 
-CC = gcc
-LD = ld
+CC = crossCompiler/bin/i686-elf-gcc
+LD = crossCompiler/bin/i686-elf-ld
 
 ASFLAGS = -m32
 CFLAGS = -m32 -Wall -g -fno-stack-protector -nostdinc -I./include

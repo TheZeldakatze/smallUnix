@@ -1,2 +1,5 @@
 /obj/*.o
 /bin/*.bin
+/crossCompiler/*
+!/crossCompiler/setupCrossCompile.sh
+!/crossCompiler/README

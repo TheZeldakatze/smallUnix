@@ -5,7 +5,7 @@
  *      Author: maite
  */
 
-void exit(int code);
+extern void exit(int code);
 
 int i = 0;
 
