@@ -3,3 +3,4 @@
 /crossCompiler/*
 !/crossCompiler/setupCrossCompile.sh
 !/crossCompiler/README
+!/crossCompiler/include

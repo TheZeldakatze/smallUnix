@@ -16,6 +16,11 @@ struct task_t {
 	struct cpu_state *state;
 	void **pagelist;
 	long pagelistCounter;
+	int parent_pid;
+	int forkspace_pid; /** Forkspace describes a process that was fork()ed but has the same
+		base code stuff (i.e. exec() or simmelar was not run yet)
+		we have to copy the new pages over in order to make fork() work. Now this is probably
+		resource intensive */
 	struct task_t *next;
 };
 

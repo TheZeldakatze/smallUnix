@@ -8,8 +8,8 @@ OBJ := $(patsubst $(SRC_DIR)/%, $(OBJ_DIR)/%.o, $(SRC))
 CC = crossCompiler/bin/i686-elf-gcc
 LD = crossCompiler/bin/i686-elf-ld
 
-ASFLAGS = -m32
-CFLAGS = -m32 -Wall -g -fno-stack-protector -nostdinc -I./include
+ASFLAGS =
+CFLAGS = -Wall -g -fno-stack-protector -I./include
 LDFLAGS = -melf_i386 -T link.ld
 
 all: bin/kernel.bin

@@ -5,11 +5,14 @@
  *      Author: maite
  */
 
+#include <console.h>
 #include <task.h>
 #include <pmm.h>
+#include <elf.h>
+#include <utils.h>
 
-const int PAGELIST_SITE_ENTRIES = PAGE_SIZE / sizeof(void*) - 1;
-const int PAGELIST_SITE_NEXT    = PAGE_SIZE / sizeof(void*);
+const int PAGELIST_SITE_ENTRIES = PAGE_SIZE / sizeof(void*) - 2;
+const int PAGELIST_SITE_NEXT    = PAGE_SIZE / sizeof(void*) - 1;
 
 static void task_a() {
 	while(1) {
@@ -168,17 +171,30 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 }
 
 struct task_t *load_program(void* start, void* end) {
+	struct elf_header *program_header = (struct elf_header*) start;
 	unsigned long length = end - start;
-	int pagesUsed = length / 4096 + (length % 4096 != 0);
-	unsigned char *target = 0x200000; //pmm_alloc_range(pagesUsed);
+	//int pagesUsed = length / 4096 + (length % 4096 != 0);
+	//unsigned char *target = 0x200000; //pmm_alloc_range(pagesUsed);
 
-	char* source = (char*) start;
-
-	for(int i = 0; i<length; i++) {
-		target[i] = source[i];
+	// check for a valid elf magic
+	if(program_header->magic != ELF_MAGIC) {
+		kputs("Error loading program! Invalid elf magic");
+		return (void*) 0;
 	}
 
-	struct task_t* task = create_task(target);
+	// load the segments
+	struct elf_program_header_entry *program_header_entry = (void*) (start + program_header->program_header_tbl_offset);
+	for(int i = 0; i<program_header->program_header_entry_count; i++, program_header_entry++) {
+		void *src, *dst;
+		src = ((void*) (program_header_entry->p_offset + start));
+		dst = ((void*) program_header_entry->vaddr);
+
+		kmemset(dst, 0, program_header_entry->memsize);
+		kmemcpy(dst, src, program_header_entry->filesize);
+		kputs("loaded segment");
+	}
+
+	struct task_t* task = create_task((void*) program_header->entry_posititon);
 	//task_addPageToPagelist_range(task, target, pagesUsed);
 	return task;
 }

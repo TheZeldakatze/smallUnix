@@ -1,5 +1,5 @@
 ENTRY(_start)
-OUTPUT_FORMAT(binary)
+OUTPUT_FORMAT(elf32-i386)
 
 SECTIONS
 {
@@ -9,7 +9,6 @@ SECTIONS
 	
 	
 	.text : {
-		*(start)
 		*(.text)
 	}
 	.data ALIGN(4096) : {

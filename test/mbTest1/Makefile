@@ -4,9 +4,9 @@ OBJS = $(addsuffix .o,$(basename $(SRCS)))
 CC = ../../crossCompiler/bin/i686-elf-gcc
 LD = ../../crossCompiler/bin/i686-elf-ld
 
-ASFLAGS = -m32
-CFLAGS = -m32 -Wall -g -fno-stack-protector --no-pic -nostdinc -c -I include
-LDFLAGS = -melf_i386 -Tlink.ld
+ASFLAGS = -m32 -pie -fpic
+CFLAGS = -m32 -Wall -g -fno-stack-protector -c -I include -pie -fpic
+LDFLAGS = -melf_i386 -Tlink.ld -pie
 
 mbTest1.bin: $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $^
@@ -18,6 +18,6 @@ mbTest1.bin: $(OBJS)
 	$(CC) $(CFLAGS) -c -o $@ $^
 
 clean:
-	rm $(OBJS)
+	rm $(OBJS) mbTest1.bin
 
 .PHONY: clean

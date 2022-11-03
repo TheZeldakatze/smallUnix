@@ -9,7 +9,7 @@
 .global _start
 .extern main
 
-.section start
+//.section start
 _start:
 	call main
 
