@@ -10,20 +10,14 @@
 #include <pmm.h>
 #include <elf.h>
 #include <utils.h>
+#include <console.h>
 
 const int PAGELIST_SITE_ENTRIES = PAGE_SIZE / sizeof(void*) - 2;
 const int PAGELIST_SITE_NEXT    = PAGE_SIZE / sizeof(void*) - 1;
 
-static void task_a() {
+static void task_idle() {
 	while(1) {
-		asm("int $0x30" : : "a" (0), "b" ('0'));
-		for(int i = 0; i<10000000;i++);
-	}
-}
-
-static void task_b() {
-	while(1) {
-		kputs("1");
+		//asm("int $0x30" : : "a" (0), "b" ('0'));
 		for(int i = 0; i<10000000;i++);
 	}
 }
@@ -172,9 +166,11 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 
 struct task_t *load_program(void* start, void* end) {
 	struct elf_header *program_header = (struct elf_header*) start;
+
+	// first we have to reserve a memory area for the elf image to be loaded to
 	unsigned long length = end - start;
-	//int pagesUsed = length / 4096 + (length % 4096 != 0);
-	//unsigned char *target = 0x200000; //pmm_alloc_range(pagesUsed);
+	int pagesUsed = length / 4096 + (length % 4096 != 0);
+	unsigned char *target = pmm_alloc_range(pagesUsed);
 
 	// check for a valid elf magic
 	if(program_header->magic != ELF_MAGIC) {
@@ -185,25 +181,62 @@ struct task_t *load_program(void* start, void* end) {
 	// load the segments
 	struct elf_program_header_entry *program_header_entry = (void*) (start + program_header->program_header_tbl_offset);
 	for(int i = 0; i<program_header->program_header_entry_count; i++, program_header_entry++) {
+
+		// only load the LOAD segments
+		if(program_header_entry->type != ELF_PH_TYPE_LOAD)
+			continue;
+
+		// the memsize must not be smaller than the file size
+		if(program_header_entry->filesize > program_header_entry->memsize) {
+			kputs("PANIC: [ELF] filesz > memsize");
+			while(1);
+		}
+
 		void *src, *dst;
 		src = ((void*) (program_header_entry->p_offset + start));
-		dst = ((void*) program_header_entry->vaddr);
+		dst = ((void*) (program_header_entry->vaddr + target)); // we have to offset by the image area in physical memory
 
-		kmemset(dst, 0, program_header_entry->memsize);
+		kmemset(dst, 0, program_header_entry->memsize); // TODO we could make it more efficient by
+														// only setting the remainder after kmemcpy to the page end
 		kmemcpy(dst, src, program_header_entry->filesize);
 		kputs("loaded segment");
 	}
 
-	struct task_t* task = create_task((void*) program_header->entry_posititon);
+	// now fix the section table
+	/* this is a incomplete stub that will at some point be required to use dynamic libraries
+	struct elf_section_table_entry *section_table_entry = (void*) (start + program_header->section_header_tbl_offset);
+
+	// find the global symbol table
+	int global_symbol_table_index = -1;
+	for(int i = 0; i<program_header->section_header_count; i++) {
+		if(section_table_entry[i].type == ELF_SH_DYNSYM) {
+			global_symbol_table_index = i;
+			break;
+		}
+	}
+	struct elf_sym *global_symbol_table = (struct elf_sym*) (start + section_table_entry[global_symbol_table].offset);
+	char *global_strings = start + section_table_entry[section_table_entry[global_symbol_table_index].link].offset;
+
+	// do the relocation
+	for(int i = 0; i<program_header->section_header_count; i++) {
+		if(section_table_entry[i].type == ELF_SH_REL) {
+			struct elf_rel *rel = (struct elf_rel*) (start + (section_table_entry + i));
+
+		}
+	}*/
+
+	// now create the task itself
+	struct task_t* task = create_task((void*) (program_header->entry_posititon + target));
 	//task_addPageToPagelist_range(task, target, pagesUsed);
+
 	return task;
 }
 
 void init_multitasking(struct multiboot *mb) {
-	create_task((void*) task_a);
+	create_task((void*) task_idle);
 	//create_task((void*) task_b);
 	struct multiboot_module* mod = mb->mods_addr;
 		load_program((void*) mod[0].start, (void*) mod[0].end);
-		//load_program((void*) mod[0].start, (void*) mod[0].end);
+		load_program((void*) mod[1].start, (void*) mod[1].end);
 		//load_program((void*) mod[0].start, (void*) mod[0].end);
 }

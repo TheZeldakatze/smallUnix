@@ -1,11 +1,22 @@
 #include <pmm.h>
 
 #include <main.h>
+#include <console.h>
 
 #define BITMAP_SIZE 32768
 #define BITMAP_EMPTY b11111111111111111111111111111111
 #define BITMAP_FULL 0
 static unsigned long bitmap[BITMAP_SIZE]; // 1=free, 0=used
+
+void pmm_mark_used(void* addr) {
+	unsigned long i = (unsigned long) addr / 4096;
+	bitmap[i / 32] &= ~(1 << (i % 32));
+}
+
+void pmm_free(void* addr) {
+	unsigned long i = (unsigned long) addr / 4096;
+	bitmap[i / 32] |= (1 << (i % 32));
+}
 
 void pmm_install(struct multiboot *mb) {
 
@@ -102,7 +113,7 @@ void* pmm_alloc_range(int pages) {
 				// found a free page
 				if((bitmap[i] & (1 << j))) {
 					if(freeStartCandidate == (void*) 0) {
-						freeStartCandidate = ((i*32 + j) * 4096);
+						freeStartCandidate = (void*) ((i*32 + j) * 4096);
 					}
 
 					pageCount++;
@@ -133,14 +144,4 @@ void pmm_clear_page(void* addr) {
 	for(; start<end; start++) {
 		start = 0;
 	}
-}
-
-void pmm_mark_used(void* addr) {
-	unsigned long i = (unsigned long) addr / 4096;
-	bitmap[i / 32] &= ~(1 << (i % 32));
-}
-
-void pmm_free(void* addr) {
-	unsigned long i = (unsigned long) addr / 4096;
-	bitmap[i / 32] |= (1 << (i % 32));
 }

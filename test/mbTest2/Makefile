@@ -8,7 +8,7 @@ ASFLAGS = -m32 -pie -fPIE
 CFLAGS = -m32 -Wall -g -fno-stack-protector -c -I include -pie -fPIE
 LDFLAGS = -melf_i386 -Tlink.ld -pie
 
-mbTest1.bin: $(OBJS)
+mbTest2.bin: $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $^
 
 %.o: %.c
