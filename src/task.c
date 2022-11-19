@@ -105,7 +105,7 @@ struct task_t *create_task(void* entry) {
 	first_task = new_task;
 
 	// add created pages to the page list
-	//task_addPageToPagelist(new_task, (void*) stack);
+	task_addPageToPagelist(new_task, (void*) stack);
 
 	return new_task;
 }
@@ -199,7 +199,6 @@ struct task_t *load_program(void* start, void* end) {
 		kmemset(dst, 0, program_header_entry->memsize); // TODO we could make it more efficient by
 														// only setting the remainder after kmemcpy to the page end
 		kmemcpy(dst, src, program_header_entry->filesize);
-		kputs("loaded segment");
 	}
 
 	// now fix the section table
@@ -227,7 +226,7 @@ struct task_t *load_program(void* start, void* end) {
 
 	// now create the task itself
 	struct task_t* task = create_task((void*) (program_header->entry_posititon + target));
-	//task_addPageToPagelist_range(task, target, pagesUsed);
+	task_addPageToPagelist_range(task, target, pagesUsed);
 
 	return task;
 }
@@ -237,6 +236,6 @@ void init_multitasking(struct multiboot *mb) {
 	//create_task((void*) task_b);
 	struct multiboot_module* mod = mb->mods_addr;
 		load_program((void*) mod[0].start, (void*) mod[0].end);
-		load_program((void*) mod[1].start, (void*) mod[1].end);
+		//load_program((void*) mod[1].start, (void*) mod[1].end);
 		//load_program((void*) mod[0].start, (void*) mod[0].end);
 }

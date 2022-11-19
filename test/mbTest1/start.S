@@ -7,23 +7,17 @@
 
 
 .global _start
+.global exit
 .extern main
 
-//.section start
 _start:
 	call main
 
 exit:
-	push %ebx
-	mov %eax, 1
-
+	pop %ebx
+	mov $0, %eax
 	int $48
 
-	// print A
-	mov %eax, 0
-	mov %ebx, 'A'
-	int $48
-
-	jmp exit;
+	jmp exit
 
 .section .text

@@ -9,6 +9,7 @@
 #include <int.h>
 #include <console.h>
 #include <task.h>
+#include <syscall.h>
 
 #define GDT_ENTRIES 3
 
@@ -249,21 +250,7 @@ void int_install() {
 	asm volatile("lidt %0" : : "m" (idt_pointer));
 }
 
-struct cpu_state* handle_syscall(struct cpu_state* cpu) {
-	switch(cpu->eax) {
-		case 0: {
-			kputc((char) cpu->ebx);
-			break;
-		}
 
-		case 1: { // exit
-			kputs("A task exited!");
-			return kill_current_task();
-		}
-	}
-
-	return cpu;
-}
 
 struct cpu_state* int_handler(struct cpu_state* cpu) {
 	struct cpu_state* new_state = cpu;
