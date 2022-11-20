@@ -16,6 +16,7 @@ struct cpu_state* handle_syscall(struct cpu_state* cpu) {
 		}
 		case SYSCALL_FORK: {
 			kputs("fork(): not implemented");
+			cpu->eax = 0;
 			break;
 		}
 		case SYSCALL_READ: {

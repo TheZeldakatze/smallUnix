@@ -15,6 +15,7 @@
 extern void exit(int code);
 extern int write(int fd, const void *buf, int count);
 extern int read(int fd, void *buf, int count);
+extern int fork();
 
 int i = 0;
 
@@ -27,8 +28,14 @@ int main() {
 	write(1, buf, count);
 
 	//asm volatile("int $48" : : "a" (SYSCALL_EXIT), "b" (0));
+	write(1, "Testing fork()\n", 15);
+	int ret = fork();
+	if(ret == 0)
+		write(1, "parent\n", 7);
+	else
+		write(1, "child\n",6);
+	while(1);
 	exit(0);
-	write(0, "HELLO WORLD! now with write ... \n", 33);
 }
 
 int write(int fd, const void *buf, int count) {
@@ -70,5 +77,22 @@ int read(int fd, void *buf, int count) {
 	asm volatile("pop %ebx");
 	asm volatile("pop %ecx");
 
+	return ret;
+}
+
+int fork() {
+	// save the registers
+	asm volatile("push %eax");
+	asm volatile("push %ebx");
+
+	asm volatile("int $48" : : "a" (SYSCALL_FORK));
+
+	// get the return value
+	int ret = 0;
+	asm volatile("movl %%eax, %0" : "=r"(ret));
+
+	// restore the registers
+	asm volatile("pop %eax");
+	asm volatile("pop %ebx");
 	return ret;
 }
