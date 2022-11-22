@@ -240,11 +240,7 @@ void fork_current_task(struct cpu_state *cpu) {
 	//task_createSwapspace(task);
 	task->swaplist = pmm_alloc();
 
-	for(int i = 0; i<4; i++) {
-		task->swaplist[i*2] = pmm_alloc();
-		task->swaplist[i*2+1] = current_task->image_start + PAGE_SIZE * i;
-		kmemcpy((char*) task->swaplist[i*2], task->swaplist[i*2+1], PAGE_SIZE);
-	}
+	task_addPageToSwaplist_range(task, current_task->image_start, 4);
 	//kmemcpy((char*) &swapspace, current_task->image_start, PAGE_SIZE * 4);
 	kmemcpy((char*) task->stack_store, current_task->stack, PAGE_SIZE);
 }
@@ -288,7 +284,7 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 
 	if(current_task->forkspace_pid > 0) {
 		for(int i = 0; i<4; i++) {
-			kmemswap((char*) current_task->swaplist[i*2+1], (char*) current_task->swaplist[i*2], PAGE_SIZE);
+			kmemswap((char*) current_task->swaplist[i*2], (char*) current_task->swaplist[i*2+1], PAGE_SIZE);
 		}
 		//kmemswap((char*) &swapspace, (char*) current_task->image_start, PAGE_SIZE * 4);
 		kmemswap((char*) current_task->stack_store, (char*) current_task->stack, PAGE_SIZE);
@@ -302,7 +298,7 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 
 	if(current_task->forkspace_pid > 0) {
 		for(int i = 0; i<4; i++) {
-			kmemswap((char*) current_task->swaplist[i*2+1], (char*) current_task->swaplist[i*2], PAGE_SIZE);
+			kmemswap((char*) current_task->swaplist[i*2], (char*) current_task->swaplist[i*2+1], PAGE_SIZE);
 		}
 
 		kmemswap((char*) current_task->stack_store, current_task->stack, PAGE_SIZE);
