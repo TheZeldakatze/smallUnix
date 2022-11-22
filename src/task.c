@@ -12,8 +12,11 @@
 #include <utils.h>
 #include <console.h>
 
-const int PAGELIST_SITE_ENTRIES = PAGE_SIZE / sizeof(void*) - 2;
-const int PAGELIST_SITE_NEXT    = PAGE_SIZE / sizeof(void*) - 1;
+const int PAGELIST_SITE_ENTRIES = PAGE_SIZE / sizeof(void*) - 2 * sizeof(void*);
+const int PAGELIST_SITE_NEXT    = PAGE_SIZE / sizeof(void*) - 1 * sizeof(void*);
+
+const int SWAPLIST_SITE_ENTRIES = PAGE_SIZE / (sizeof(void*) * 2) - 3 * sizeof(void*);
+const int SWAPLIST_SITE_NEXT    = PAGE_SIZE / sizeof(void*) - 1 * sizeof(void*);
 
 static void task_idle() {
 	while(1) {
@@ -26,7 +29,7 @@ static int NEXT_PID = 0;
 
 struct task_t *first_task, *current_task;
 
-unsigned char forkarea[PAGE_SIZE*10];
+unsigned char swapspace[4*PAGE_SIZE];
 
 void task_addPageToPagelist(struct task_t *task, void *page) {
 	int pagelistNr   = task->pagelistCounter / PAGELIST_SITE_ENTRIES;
@@ -58,18 +61,126 @@ void task_addPageToPagelist_range(struct task_t *task, void *startPage, int coun
 		pagelistSite = pagelistSite[PAGELIST_SITE_NEXT];
 	}
 
-	void* start = startPage;
-	for(int i = 0; i<pagelistNr; i++) {
+	unsigned char* start = startPage;
+	for(int i = 0; i<count; i++) {
 		pagelistSite[pagelistLine] = start;
 		start += PAGE_SIZE;
 		task->pagelistCounter++;
 		pagelistLine++;
-		if(pagelistLine >= PAGELIST_SITE_NEXT) {
+		if(pagelistLine >= PAGELIST_SITE_ENTRIES) {
 			if(pagelistSite[PAGELIST_SITE_NEXT] == ((void*) 0))
 				pagelistSite[PAGELIST_SITE_NEXT] = pmm_alloc();
 			pagelistSite = pagelistSite[PAGELIST_SITE_NEXT];
 			pagelistNr++;
 			pagelistLine = 0;
+		}
+	}
+}
+
+void task_copyPagelist(struct task_t* dest_task, struct task_t* src_task) {
+	int pagelistNr   = src_task->pagelistCounter / PAGELIST_SITE_ENTRIES;
+	int pagelistLine = src_task->pagelistCounter % PAGELIST_SITE_ENTRIES;
+	void **pagelistSrc  =  src_task->pagelist;
+	void **pagelistDest = dest_task->pagelist;
+
+	// copy the first page
+	int lines = (pagelistNr > 0 ? PAGELIST_SITE_ENTRIES : pagelistLine);
+	kmemcpy(pagelistDest, pagelistSrc, lines * sizeof(void*));
+	dest_task->pagelistCounter += lines;
+
+	for(int i = 1; i<pagelistNr + 1; i++) {
+		// go to this page
+		pagelistSrc[PAGELIST_SITE_NEXT] = pmm_alloc();
+		pagelistSrc  = pagelistSrc [PAGELIST_SITE_NEXT];
+		pagelistDest = pagelistDest[PAGELIST_SITE_NEXT];
+
+		// copy it
+		int lines = (pagelistNr > i ? PAGELIST_SITE_ENTRIES : pagelistLine);
+		kmemcpy(pagelistDest, pagelistSrc, lines * sizeof(void*));
+		dest_task->pagelistCounter += lines;
+	}
+}
+
+void task_addPageToSwaplist_range(struct task_t *task, void *startPage, int count) {
+
+	// calculate the start offsets
+	int swaplistNr   = task->swaplistCounter / SWAPLIST_SITE_ENTRIES;
+	int swaplistLine = task->swaplistCounter % SWAPLIST_SITE_ENTRIES;
+	void **swaplistSite = task->swaplist;
+
+	// move to the start site
+	for(int i = 0; i<swaplistNr; i++) {
+		if(swaplistSite[SWAPLIST_SITE_NEXT] == (void*) 0) {
+			swaplistSite[SWAPLIST_SITE_NEXT] = pmm_alloc();
+		}
+
+		swaplistSite = swaplistSite[SWAPLIST_SITE_NEXT];
+	}
+
+	// put in every site entry
+	unsigned char* start = startPage;
+	for(int i = 0; i<count; i++) {
+
+		// add the entry and find a free page
+		swaplistSite[swaplistLine*2] = start;
+		swaplistSite[swaplistLine*2+1] = pmm_alloc();
+
+		// copy the page
+		kmemcpy(swaplistSite[swaplistLine*2+1], swaplistSite[swaplistLine*2], PAGE_SIZE);
+
+		// go to the next line
+		start += PAGE_SIZE;
+		task->swaplistCounter++;
+		swaplistLine++;
+
+		// do we have to go to the next page?
+		if(swaplistLine >= SWAPLIST_SITE_ENTRIES) {
+
+			// if necessary, allocate a new page
+			if(swaplistSite[SWAPLIST_SITE_NEXT] == (void*) 0)
+				swaplistSite[SWAPLIST_SITE_NEXT] = pmm_alloc();
+			swaplistSite = swaplistSite[SWAPLIST_SITE_NEXT];
+			swaplistNr++;
+			swaplistLine = 0;
+		}
+	}
+}
+
+void task_swap(struct task_t *task) {
+	// get all the length values for the list
+	int swaplistNr   = task->swaplistCounter / SWAPLIST_SITE_ENTRIES;
+	int swaplistLine = task->swaplistCounter % SWAPLIST_SITE_ENTRIES;
+
+	// iterate through the array
+	void **currentSwaplistPage = task->swaplist;
+	for(int i = 0; i<swaplistNr+1; i++) {
+		int lineCount = (i < swaplistNr ? SWAPLIST_SITE_ENTRIES : swaplistLine);
+		for(int j = 0; j<lineCount; j++) {
+
+			// do the swapping
+			kmemswap(currentSwaplistPage[swaplistLine*2+1], currentSwaplistPage[swaplistLine*2], PAGE_SIZE);
+		}
+
+		// advance to the next page
+		currentSwaplistPage = currentSwaplistPage[SWAPLIST_SITE_NEXT];
+	}
+}
+
+void task_createSwapspace(struct task_t *task) {
+	task->swaplist = pmm_alloc();
+
+	// iterate through the pagelist
+	int line = 0;
+	void **page = task->pagelist;
+	for(int i = 0; i<task->pagelistCounter;i++) {
+		// add to the swaplist (yes, I know I'm lazy) (TODO optimize)
+		task_addPageToSwaplist_range(task, page[line], 1);
+
+		// go to the next line or page
+		line++;
+		if(line >= PAGELIST_SITE_ENTRIES) {
+			page = task->pagelist[PAGELIST_SITE_NEXT];
+			line = 0;
 		}
 	}
 }
@@ -97,17 +208,14 @@ struct task_t *create_task(void* entry) {
 
 	new_task->state = state;
 	new_task->stack = stack;
+	new_task->stack_store = new_task->stack; // for non-forked programs, the addresses are the same
 	new_task->pid   = NEXT_PID++;
 	new_task->pagelist = pmm_alloc();
-	//new_task->pagelist[PAGELIST_SITE_NEXT] = (void*) pmm_alloc();
 	new_task->pagelistCounter = 0;
 
 	// add the task to the list
 	new_task->next = first_task;
 	first_task = new_task;
-
-	// add created pages to the page list
-	task_addPageToPagelist(new_task, (void*) stack);
 
 	return new_task;
 }
@@ -123,12 +231,21 @@ int get_current_task_pid() {
 void fork_current_task(struct cpu_state *cpu) {
 	struct task_t *task = create_task((void*) 0);
 	task->forkspace_pid = current_task->pid;
-	task->image_start = current_task->image_start;
 	task->stack = current_task->stack;
 	task->state = cpu;
 	task->state->eax = task->pid;
-	kmemcpy((char*) &forkarea, current_task->image_start, PAGE_SIZE * 4);
-	kmemcpy((char*) &forkarea + (PAGE_SIZE * 4), current_task->stack, PAGE_SIZE);
+	task->image_start = current_task->image_start;
+
+	task->stack_store = pmm_alloc();
+
+	/*task_copyPagelist(task, current_task);
+	task_createSwapspace(task);
+	for(int i = 0; i<4; i++) {
+		swapspace[i] = pmm_alloc();
+		kmemcpy(swapspace[i], task->image_start + i*PAGE_SIZE, PAGE_SIZE);
+	}*/
+	kmemcpy((char*) &swapspace, current_task->image_start, PAGE_SIZE * 4);
+	kmemcpy((char*) task->stack_store, current_task->stack, PAGE_SIZE);
 }
 
 struct cpu_state *kill_current_task() {
@@ -169,8 +286,11 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 	}
 
 	if(current_task->forkspace_pid > 0) {
-		kmemswap(&forkarea, current_task->image_start, PAGE_SIZE*4);
-		kmemswap((char*) &forkarea + (PAGE_SIZE * 4), current_task->stack, PAGE_SIZE);
+		for(int i = 0; i<4; i++) {
+				//kmemswap(swapspace[i], current_task->image_start + i*PAGE_SIZE, PAGE_SIZE);
+			}
+		kmemswap((char*) &swapspace, (char*) current_task->image_start, PAGE_SIZE * 4);
+		kmemswap((char*) current_task->stack_store, (char*) current_task->stack, PAGE_SIZE);
 	}
 
 	// advance in the list
@@ -180,8 +300,11 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 		current_task = first_task;
 
 	if(current_task->forkspace_pid > 0) {
-		kmemswap((char*) &forkarea, (char*) current_task->image_start, PAGE_SIZE*4);
-		kmemswap((char*) &forkarea + (PAGE_SIZE * 4), (char*) current_task->stack, PAGE_SIZE);
+		for(int i = 0; i<4; i++) {
+				//kmemswap(swapspace[i], current_task->image_start + i*PAGE_SIZE, PAGE_SIZE);
+			}
+		kmemswap((char*) &swapspace, (char*) current_task->image_start, PAGE_SIZE * 4);
+		kmemswap((char*) current_task->stack_store, current_task->stack, PAGE_SIZE);
 	}
 
 	return current_task->state;
@@ -268,6 +391,8 @@ struct task_t *load_program(void* start, void* end) {
 
 	// now create the task itself
 	struct task_t* task = create_task((void*) (program_header->entry_posititon + target));
+
+	// add all pages used by the program to the pagelist
 	//task_addPageToPagelist_range(task, target, pagesUsed);
 	task->image_start = target;
 

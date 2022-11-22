@@ -10,6 +10,23 @@
 
 #include <main.h>
 
+/* A description of how tasks are stored and loaded
+ *
+ * when a task is loaded from an address, it will be loaded to the next free
+ * address space. Because every program is a pie-executable, it can be run from
+ * there whithout doing any kind of swapping.
+ *
+ * During execution, the programs can get new pages that are not connected with
+ * their initial load area. This allows for programs to do dynamic memory
+ * management without an mmu. However, we have to account for that and save
+ * each used page
+ *
+ * If a program has to be swapped in (for example because it is fork()ed),
+ * there exists the swaplist that stores each target page address together with
+ * it's store address. These can be kmemswap()ed in when the program has to be
+ * executed
+ * */
+
 struct task_t {
 	int pid;
 	unsigned char* stack;
@@ -21,7 +38,10 @@ struct task_t {
 		base code stuff (i.e. exec() or simelar was not run yet)
 		we have to copy the new pages over in order to make fork() work. Now this is probably
 		resource intensive */
+	void **swaplist;
+	int swaplistCounter;
 	unsigned char *image_start;
+	unsigned char *stack_store;
 	struct task_t *next;
 };
 
