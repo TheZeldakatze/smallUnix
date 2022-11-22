@@ -29,8 +29,6 @@ static int NEXT_PID = 0;
 
 struct task_t *first_task, *current_task;
 
-unsigned char* swapspace[4];
-
 void task_addPageToPagelist(struct task_t *task, void *page) {
 	int pagelistNr   = task->pagelistCounter / PAGELIST_SITE_ENTRIES;
 	int pagelistLine = task->pagelistCounter % PAGELIST_SITE_ENTRIES;
@@ -238,11 +236,14 @@ void fork_current_task(struct cpu_state *cpu) {
 
 	task->stack_store = pmm_alloc();
 
-	/*task_copyPagelist(task, current_task);
-	task_createSwapspace(task);*/
+	task_copyPagelist(task, current_task);
+	//task_createSwapspace(task);
+	task->swaplist = pmm_alloc();
+
 	for(int i = 0; i<4; i++) {
-		swapspace[i] = pmm_alloc();
-		kmemcpy((char*) swapspace[i], current_task->image_start + PAGE_SIZE * i, PAGE_SIZE);
+		task->swaplist[i*2] = pmm_alloc();
+		task->swaplist[i*2+1] = current_task->image_start + PAGE_SIZE * i;
+		kmemcpy((char*) task->swaplist[i*2], task->swaplist[i*2+1], PAGE_SIZE);
 	}
 	//kmemcpy((char*) &swapspace, current_task->image_start, PAGE_SIZE * 4);
 	kmemcpy((char*) task->stack_store, current_task->stack, PAGE_SIZE);
@@ -287,7 +288,7 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 
 	if(current_task->forkspace_pid > 0) {
 		for(int i = 0; i<4; i++) {
-			kmemswap((char*) swapspace[i], (char*) current_task->image_start + PAGE_SIZE * i, PAGE_SIZE);
+			kmemswap((char*) current_task->swaplist[i*2+1], (char*) current_task->swaplist[i*2], PAGE_SIZE);
 		}
 		//kmemswap((char*) &swapspace, (char*) current_task->image_start, PAGE_SIZE * 4);
 		kmemswap((char*) current_task->stack_store, (char*) current_task->stack, PAGE_SIZE);
@@ -301,7 +302,7 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 
 	if(current_task->forkspace_pid > 0) {
 		for(int i = 0; i<4; i++) {
-			kmemswap((char*) swapspace[i], (char*) current_task->image_start + PAGE_SIZE * i, PAGE_SIZE);
+			kmemswap((char*) current_task->swaplist[i*2+1], (char*) current_task->swaplist[i*2], PAGE_SIZE);
 		}
 
 		kmemswap((char*) current_task->stack_store, current_task->stack, PAGE_SIZE);
@@ -393,7 +394,7 @@ struct task_t *load_program(void* start, void* end) {
 	struct task_t* task = create_task((void*) (program_header->entry_posititon + target));
 
 	// add all pages used by the program to the pagelist
-	//task_addPageToPagelist_range(task, target, pagesUsed);
+	task_addPageToPagelist_range(task, target, pagesUsed);
 	task->image_start = target;
 
 	return task;
