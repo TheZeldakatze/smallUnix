@@ -26,6 +26,8 @@ static int NEXT_PID = 0;
 
 struct task_t *first_task, *current_task;
 
+unsigned char forkarea[PAGE_SIZE*10];
+
 void task_addPageToPagelist(struct task_t *task, void *page) {
 	int pagelistNr   = task->pagelistCounter / PAGELIST_SITE_ENTRIES;
 	int pagelistLine = task->pagelistCounter % PAGELIST_SITE_ENTRIES;
@@ -118,6 +120,17 @@ int get_current_task_pid() {
 	return current_task->pid;
 }
 
+void fork_current_task(struct cpu_state *cpu) {
+	struct task_t *task = create_task((void*) 0);
+	task->forkspace_pid = current_task->pid;
+	task->image_start = current_task->image_start;
+	task->stack = current_task->stack;
+	task->state = cpu;
+	task->state->eax = task->pid;
+	kmemcpy((char*) &forkarea, current_task->image_start, PAGE_SIZE * 4);
+	kmemcpy((char*) &forkarea + (PAGE_SIZE * 4), current_task->stack, PAGE_SIZE);
+}
+
 struct cpu_state *kill_current_task() {
 	struct task_t *old_task = current_task;
 	if(first_task == current_task) {
@@ -155,11 +168,21 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 		current_task = first_task;
 	}
 
+	if(current_task->forkspace_pid > 0) {
+		kmemswap(&forkarea, current_task->image_start, PAGE_SIZE*4);
+		kmemswap((char*) &forkarea + (PAGE_SIZE * 4), current_task->stack, PAGE_SIZE);
+	}
+
 	// advance in the list
 	if(current_task->next != (void*) 0)
 		current_task = current_task->next;
 	else
 		current_task = first_task;
+
+	if(current_task->forkspace_pid > 0) {
+		kmemswap((char*) &forkarea, (char*) current_task->image_start, PAGE_SIZE*4);
+		kmemswap((char*) &forkarea + (PAGE_SIZE * 4), (char*) current_task->stack, PAGE_SIZE);
+	}
 
 	return current_task->state;
 }
@@ -167,21 +190,17 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 struct task_t *load_program(void* start, void* end) {
 	struct elf_header *program_header = (struct elf_header*) start;
 
-	// first we have to reserve a memory area for the elf image to be loaded to
-	unsigned long length = end - start;
-	int pagesUsed = length / 4096 + (length % 4096 != 0);
-	unsigned char *target = pmm_alloc_range(pagesUsed);
-
 	// check for a valid elf magic
 	if(program_header->magic != ELF_MAGIC) {
 		kputs("Error loading program! Invalid elf magic");
 		return (void*) 0;
 	}
 
-	// load the segments
+	// check how much memory is required
 	struct elf_program_header_entry *program_header_entry = (void*) (start + program_header->program_header_tbl_offset);
+	unsigned long length;
+	unsigned char *lowestLoad = (void*) 0, *highestAddr = (void*) 0;
 	for(int i = 0; i<program_header->program_header_entry_count; i++, program_header_entry++) {
-
 		// only load the LOAD segments
 		if(program_header_entry->type != ELF_PH_TYPE_LOAD)
 			continue;
@@ -192,6 +211,29 @@ struct task_t *load_program(void* start, void* end) {
 			while(1);
 		}
 
+		// get the vaddr
+		unsigned char* vaddr = (unsigned char*) program_header_entry->vaddr;
+		unsigned char* vaddrEnd = program_header_entry->memsize + vaddr;
+
+		// compare the segment's size
+		if(lowestLoad == (void*) 0 || lowestLoad >  vaddr)
+			lowestLoad = vaddr;
+		if(highestAddr == (void*) 0 || highestAddr < vaddrEnd)
+			highestAddr = vaddrEnd;
+	}
+	length = (unsigned char*) highestAddr - (unsigned char*) lowestLoad;
+
+	// first we have to reserve a memory area for the elf image to be loaded to
+	int pagesUsed = length / 4096 + (length % 4096 != 0);
+	unsigned char *target = pmm_alloc_range(pagesUsed);
+
+	// load the segments
+	program_header_entry = (void*) (start + program_header->program_header_tbl_offset);
+	for(int i = 0; i<program_header->program_header_entry_count; i++, program_header_entry++) {
+
+		// only load the LOAD segments
+		if(program_header_entry->type != ELF_PH_TYPE_LOAD)
+			continue;
 		void *src, *dst;
 		src = ((void*) (program_header_entry->p_offset + start));
 		dst = ((void*) (program_header_entry->vaddr + target)); // we have to offset by the image area in physical memory
@@ -226,7 +268,8 @@ struct task_t *load_program(void* start, void* end) {
 
 	// now create the task itself
 	struct task_t* task = create_task((void*) (program_header->entry_posititon + target));
-	task_addPageToPagelist_range(task, target, pagesUsed);
+	//task_addPageToPagelist_range(task, target, pagesUsed);
+	task->image_start = target;
 
 	return task;
 }

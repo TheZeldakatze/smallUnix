@@ -21,10 +21,12 @@ struct task_t {
 		base code stuff (i.e. exec() or simelar was not run yet)
 		we have to copy the new pages over in order to make fork() work. Now this is probably
 		resource intensive */
+	unsigned char *image_start;
 	struct task_t *next;
 };
 
 struct task_t *create_task(void* entry);
+void fork_current_task(struct cpu_state *cpu);
 struct cpu_state *schedule(struct cpu_state *current_state);
 void init_multitasking(struct multiboot *mb);
 

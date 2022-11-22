@@ -17,12 +17,13 @@ extern int write(int fd, const void *buf, int count);
 extern int read(int fd, void *buf, int count);
 extern int fork();
 
-int i = 0;
+int acoolvariable = 2;
+char buf[1];
 
 int main() {
 	write(0, "HELLO WORLD! now with write ... \n", 33);
 	int num = write(1, "Reading what read() will return for now:\n", 41);
-
+	//for(int j = 0; j<100000000; j++);
 	char buf[30];
 	int count = read(1, &buf, 30);
 	write(1, buf, count);
@@ -30,10 +31,17 @@ int main() {
 	//asm volatile("int $48" : : "a" (SYSCALL_EXIT), "b" (0));
 	write(1, "Testing fork()\n", 15);
 	int ret = fork();
-	if(ret == 0)
-		write(1, "parent\n", 7);
+	if(ret == 0) {
+		write(1, "parent: \n", 9);
+
+	}
 	else
 		write(1, "child\n",6);
+
+	while(acoolvariable<5) {
+			buf[0] = '0' + acoolvariable++;
+			write(1, &buf, 1);
+	}
 	while(1);
 	exit(0);
 }

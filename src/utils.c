@@ -22,3 +22,14 @@ void kmemset(void *dest, unsigned char val, int n) {
 	for(int i=0; i<n; i++)
 		cdst[i] = val;
 }
+
+void kmemswap(void *a, void *b, int n) {
+    unsigned char *l = (unsigned char*) a;
+    unsigned char *j = (unsigned char*) b;
+    const unsigned char *end = (unsigned char*) (a + n);
+	for(; l<end; l++, j++) {
+		const unsigned char tmp = *l;
+		*l = *j;
+		*j = tmp;
+	}
+}

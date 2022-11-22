@@ -5,7 +5,7 @@
  *      Author: maite
  */
 
-
+.section start
 .global _start
 .global exit
 .extern main
@@ -13,6 +13,7 @@
 _start:
 	call main
 
+.section end
 exit:
 	pop %ebx
 	mov $0, %eax
