@@ -239,12 +239,12 @@ void fork_current_task(struct cpu_state *cpu) {
 	task->stack_store = pmm_alloc();
 
 	/*task_copyPagelist(task, current_task);
-	task_createSwapspace(task);
+	task_createSwapspace(task);*/
 	for(int i = 0; i<4; i++) {
 		swapspace[i] = pmm_alloc();
-		kmemcpy(swapspace[i], task->image_start + i*PAGE_SIZE, PAGE_SIZE);
-	}*/
-	kmemcpy((char*) &swapspace, current_task->image_start, PAGE_SIZE * 4);
+		kmemcpy((char*) &swapspace + PAGE_SIZE * i, current_task->image_start + PAGE_SIZE * i, PAGE_SIZE);
+	}
+	//kmemcpy((char*) &swapspace, current_task->image_start, PAGE_SIZE * 4);
 	kmemcpy((char*) task->stack_store, current_task->stack, PAGE_SIZE);
 }
 
@@ -287,9 +287,9 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 
 	if(current_task->forkspace_pid > 0) {
 		for(int i = 0; i<4; i++) {
-				//kmemswap(swapspace[i], current_task->image_start + i*PAGE_SIZE, PAGE_SIZE);
-			}
-		kmemswap((char*) &swapspace, (char*) current_task->image_start, PAGE_SIZE * 4);
+			kmemswap((char*) &swapspace + PAGE_SIZE * i, (char*) current_task->image_start + PAGE_SIZE * i, PAGE_SIZE);
+		}
+		//kmemswap((char*) &swapspace, (char*) current_task->image_start, PAGE_SIZE * 4);
 		kmemswap((char*) current_task->stack_store, (char*) current_task->stack, PAGE_SIZE);
 	}
 
@@ -301,9 +301,9 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 
 	if(current_task->forkspace_pid > 0) {
 		for(int i = 0; i<4; i++) {
-				//kmemswap(swapspace[i], current_task->image_start + i*PAGE_SIZE, PAGE_SIZE);
-			}
-		kmemswap((char*) &swapspace, (char*) current_task->image_start, PAGE_SIZE * 4);
+			kmemswap((char*) &swapspace + PAGE_SIZE * i, (char*) current_task->image_start + PAGE_SIZE * i, PAGE_SIZE);
+		}
+
 		kmemswap((char*) current_task->stack_store, current_task->stack, PAGE_SIZE);
 	}
 
