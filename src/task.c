@@ -156,7 +156,7 @@ void task_swap(struct task_t *task) {
 		for(int j = 0; j<lineCount; j++) {
 
 			// do the swapping
-			kmemswap(currentSwaplistPage[swaplistLine*2+1], currentSwaplistPage[swaplistLine*2], PAGE_SIZE);
+			kmemswap(currentSwaplistPage[j*2+1], currentSwaplistPage[j*2], PAGE_SIZE);
 		}
 
 		// advance to the next page
@@ -232,16 +232,12 @@ void fork_current_task(struct cpu_state *cpu) {
 	task->stack = current_task->stack;
 	task->state = cpu;
 	task->state->eax = task->pid;
-	task->image_start = current_task->image_start;
 
 	task->stack_store = pmm_alloc();
 
 	task_copyPagelist(task, current_task);
-	//task_createSwapspace(task);
-	task->swaplist = pmm_alloc();
+	task_createSwapspace(task);
 
-	task_addPageToSwaplist_range(task, current_task->image_start, 4);
-	//kmemcpy((char*) &swapspace, current_task->image_start, PAGE_SIZE * 4);
 	kmemcpy((char*) task->stack_store, current_task->stack, PAGE_SIZE);
 }
 
@@ -283,10 +279,7 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 	}
 
 	if(current_task->forkspace_pid > 0) {
-		for(int i = 0; i<4; i++) {
-			kmemswap((char*) current_task->swaplist[i*2], (char*) current_task->swaplist[i*2+1], PAGE_SIZE);
-		}
-		//kmemswap((char*) &swapspace, (char*) current_task->image_start, PAGE_SIZE * 4);
+		task_swap(current_task);
 		kmemswap((char*) current_task->stack_store, (char*) current_task->stack, PAGE_SIZE);
 	}
 
@@ -297,10 +290,7 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 		current_task = first_task;
 
 	if(current_task->forkspace_pid > 0) {
-		for(int i = 0; i<4; i++) {
-			kmemswap((char*) current_task->swaplist[i*2], (char*) current_task->swaplist[i*2+1], PAGE_SIZE);
-		}
-
+		task_swap(current_task);
 		kmemswap((char*) current_task->stack_store, current_task->stack, PAGE_SIZE);
 	}
 
@@ -391,7 +381,6 @@ struct task_t *load_program(void* start, void* end) {
 
 	// add all pages used by the program to the pagelist
 	task_addPageToPagelist_range(task, target, pagesUsed);
-	task->image_start = target;
 
 	return task;
 }

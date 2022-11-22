@@ -40,7 +40,6 @@ struct task_t {
 		resource intensive */
 	void **swaplist;
 	int swaplistCounter;
-	unsigned char *image_start;
 	unsigned char *stack_store;
 	struct task_t *next;
 };
