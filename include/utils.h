@@ -10,5 +10,6 @@
 
 extern void kmemcpy(void *dest, void *src, int n);
 extern void kmemset(void *dest, unsigned char val, int n);
+extern void kmemswap(void *dest, void *src, int n);
 
 #endif /* INCLUDE_UTILS_H_ */

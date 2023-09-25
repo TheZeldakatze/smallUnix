@@ -76,10 +76,20 @@ int_common:
 	push %ebx
 	push %eax
 
+	// load the kernel data segments
+	mov $0x10, %ax
+	mov %ax, %ds
+	mov %ax, %es
+
 	// call the interrupt handler
 	push %esp
 	call int_handler
 	mov %eax, %esp
+
+	// load the user segments
+	mov $0x23, %ax
+	mov %ax, %ds
+	mov %ax, %es
 
 	// load the registers
 	pop %eax

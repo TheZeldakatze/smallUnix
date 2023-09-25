@@ -41,6 +41,23 @@
 							</tool>
 						</toolChain>
 					</folderInfo>
+					<folderInfo id="cdt.managedbuild.config.gnu.exe.debug.692155460.672997440" name="/" resourcePath="src">
+						<toolChain id="cdt.managedbuild.toolchain.gnu.exe.debug.1008857164" name="Linux GCC" superClass="cdt.managedbuild.toolchain.gnu.exe.debug" unusedChildren="">
+							<tool id="cdt.managedbuild.tool.gnu.archiver.base.52587479" name="GCC Archiver" superClass="cdt.managedbuild.tool.gnu.archiver.base.1722472549"/>
+							<tool id="cdt.managedbuild.tool.gnu.cpp.compiler.exe.debug.602271838" name="GCC C++ Compiler" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.exe.debug.1748398170"/>
+							<tool id="cdt.managedbuild.tool.gnu.c.compiler.exe.debug.1557636366" name="GCC C Compiler" superClass="cdt.managedbuild.tool.gnu.c.compiler.exe.debug.976259585">
+								<option id="gnu.c.compiler.option.include.paths.1967160901" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/smallUnix/include}&quot;"/>
+								</option>
+								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.1683313143" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
+							</tool>
+							<tool id="cdt.managedbuild.tool.gnu.c.linker.exe.debug.10079283" name="GCC C Linker" superClass="cdt.managedbuild.tool.gnu.c.linker.exe.debug.128309358"/>
+							<tool id="cdt.managedbuild.tool.gnu.cpp.linker.exe.debug.1623117831" name="GCC C++ Linker" superClass="cdt.managedbuild.tool.gnu.cpp.linker.exe.debug.1604910485"/>
+							<tool id="cdt.managedbuild.tool.gnu.assembler.exe.debug.1216419546" name="GCC Assembler" superClass="cdt.managedbuild.tool.gnu.assembler.exe.debug.98325824">
+								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.2108296634" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
+							</tool>
+						</toolChain>
+					</folderInfo>
 				</configuration>
 			</storageModule>
 			<storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>

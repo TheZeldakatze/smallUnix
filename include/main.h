@@ -29,5 +29,6 @@ struct multiboot_module {
 } __attribute__((packed));
 
 extern void kmain();
+extern void panic(char* msg);
 
 #endif

@@ -13,14 +13,12 @@
 struct task_t {
 	int pid;
 	unsigned char* stack;
+	unsigned char* user_stack;
 	struct cpu_state *state;
 	void **pagelist;
 	long pagelistCounter;
-	int parent_pid;
-	int forkspace_pid; /** Forkspace describes a process that was fork()ed but has the same
-		base code stuff (i.e. exec() or simelar was not run yet)
-		we have to copy the new pages over in order to make fork() work. Now this is probably
-		resource intensive */
+	struct task_t *parent;
+	unsigned char is_forked;
 	struct task_t *next;
 };
 
@@ -30,5 +28,6 @@ void init_multitasking(struct multiboot *mb);
 
 extern struct cpu_state *kill_current_task();
 extern int get_current_task_pid();
+extern struct task_t* fork_current_task(struct cpu_state* current_state);
 
 #endif /* INCLUDE_TASK_H_ */

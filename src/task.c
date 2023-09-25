@@ -12,8 +12,7 @@
 #include <utils.h>
 #include <console.h>
 
-const int PAGELIST_SITE_ENTRIES = PAGE_SIZE / sizeof(void*) - 2;
-const int PAGELIST_SITE_NEXT    = PAGE_SIZE / sizeof(void*) - 1;
+
 
 static void task_idle() {
 	while(1) {
@@ -22,59 +21,14 @@ static void task_idle() {
 	}
 }
 
-static int NEXT_PID = 0;
+static int NEXT_PID = 1;
 
 struct task_t *first_task, *current_task;
 
-void task_addPageToPagelist(struct task_t *task, void *page) {
-	int pagelistNr   = task->pagelistCounter / PAGELIST_SITE_ENTRIES;
-	int pagelistLine = task->pagelistCounter % PAGELIST_SITE_ENTRIES;
-	void **pagelistSite = task->pagelist;
-
-	for(int i = 0; i<pagelistNr; i++) {
-		if(pagelistSite[PAGELIST_SITE_NEXT] == ((void*) 0)) {
-			pagelistSite[PAGELIST_SITE_NEXT] = pmm_alloc();
-		}
-
-		pagelistSite = pagelistSite[PAGELIST_SITE_NEXT];
-	}
-	pagelistSite[pagelistLine] = page;
-
-	task->pagelistCounter++;
-}
-
-void task_addPageToPagelist_range(struct task_t *task, void *startPage, int count) {
-	int pagelistNr   = task->pagelistCounter / PAGELIST_SITE_ENTRIES;
-	int pagelistLine = task->pagelistCounter % PAGELIST_SITE_ENTRIES;
-	void **pagelistSite = task->pagelist;
-
-	for(int i = 0; i<pagelistNr; i++) {
-		if(pagelistSite[PAGELIST_SITE_NEXT] == ((void*) 0)) {
-			pagelistSite[PAGELIST_SITE_NEXT] = pmm_alloc();
-		}
-
-		pagelistSite = pagelistSite[PAGELIST_SITE_NEXT];
-	}
-
-	void* start = startPage;
-	for(int i = 0; i<pagelistNr; i++) {
-		pagelistSite[pagelistLine] = start;
-		start += PAGE_SIZE;
-		task->pagelistCounter++;
-		pagelistLine++;
-		if(pagelistLine >= PAGELIST_SITE_NEXT) {
-			if(pagelistSite[PAGELIST_SITE_NEXT] == ((void*) 0))
-				pagelistSite[PAGELIST_SITE_NEXT] = pmm_alloc();
-			pagelistSite = pagelistSite[PAGELIST_SITE_NEXT];
-			pagelistNr++;
-			pagelistLine = 0;
-		}
-	}
-}
-
 struct task_t *create_task(void* entry) {
-	struct task_t *new_task = pmm_alloc();
-	unsigned char* stack    = pmm_alloc();
+	struct task_t *new_task   = pmm_alloc();
+	unsigned char* stack      = pmm_alloc();
+	unsigned char* user_stack = pmm_alloc();
 
 	struct cpu_state new_state = {
 		.eax = 0,
@@ -84,9 +38,13 @@ struct task_t *create_task(void* entry) {
 		.esi = 0,
 		.edi = 0,
 		.ebp = 0,
+		.esp = (unsigned long) user_stack+4096,
 		.eip = (unsigned long) entry,
 		.cs = 0x08,
 		.eflags = 0x202,
+
+		.cs  = 0x18 | 0x03,
+		.ss  = 0x20 | 0x03,
 	};
 
 	// put the cpu_state on the process stack.
@@ -95,17 +53,20 @@ struct task_t *create_task(void* entry) {
 
 	new_task->state = state;
 	new_task->stack = stack;
+	new_task->user_stack = user_stack;
 	new_task->pid   = NEXT_PID++;
 	new_task->pagelist = pmm_alloc();
-	//new_task->pagelist[PAGELIST_SITE_NEXT] = (void*) pmm_alloc();
 	new_task->pagelistCounter = 0;
+
+	new_task->parent = (void*) 0;
+	new_task->is_forked = 0;
 
 	// add the task to the list
 	new_task->next = first_task;
 	first_task = new_task;
 
 	// add created pages to the page list
-	task_addPageToPagelist(new_task, (void*) stack);
+	//task_addPageToPagelist(new_task, (void*) stack);
 
 	return new_task;
 }
@@ -147,10 +108,34 @@ struct cpu_state *kill_current_task() {
 	return current_task->state;
 }
 
+struct task_t* fork_current_task(struct cpu_state* current_state) {
+	// save the current task
+	*current_task->state = *current_state;
+
+	// create the task
+	struct task_t* currTask = current_task;
+	struct task_t* newTask = create_task(currTask->state->eip);
+
+	newTask->is_forked = 1;
+	newTask->parent = currTask;
+	*newTask->state = *currTask->state;
+
+	kmemcpy(newTask->user_stack, currTask->user_stack, 0x1000);
+
+	// tell the processes which one is parent and who's child
+	currTask->state->eax = newTask->pid;
+	newTask->state->eax = 0;
+
+	return newTask;
+}
+
 struct cpu_state *schedule(struct cpu_state *current_state) {
 	// initialize the first task switch
 	if(current_task != (void*) 0) {
 		current_task->state = current_state;
+		if(current_task->is_forked) {
+			kmemswap(current_task->user_stack, current_task->parent->user_stack, 4096);
+		}
 	} else {
 		current_task = first_task;
 	}
@@ -160,6 +145,10 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 		current_task = current_task->next;
 	else
 		current_task = first_task;
+
+	if(current_task->is_forked) {
+		kmemswap(current_task->user_stack, current_task->parent->user_stack, 4096);
+	}
 
 	return current_task->state;
 }
@@ -226,7 +215,7 @@ struct task_t *load_program(void* start, void* end) {
 
 	// now create the task itself
 	struct task_t* task = create_task((void*) (program_header->entry_posititon + target));
-	task_addPageToPagelist_range(task, target, pagesUsed);
+	//task_addPageToPagelist_range(task, target, pagesUsed);
 
 	return task;
 }

@@ -11,7 +11,7 @@
 #include <task.h>
 #include <syscall.h>
 
-#define GDT_ENTRIES 3
+#define GDT_ENTRIES 6
 
 #define GDT_FLAG_PRESENT 0x80
 #define GDT_FLAG_DATA    0x02
@@ -33,6 +33,7 @@
 #define IDT_MACRO_SYSCALL(N) idt_set_entry(N, (unsigned) int_stub_##N, 0x8, IDT_FLAG_PRESENT | IDT_FLAG_GATE | IDT_RING3)
 
 static unsigned long long gdt[GDT_ENTRIES];
+static unsigned long tss[32] = {0, 0, 0x10};
 
 struct table_pointer {
 	unsigned short limit;
@@ -172,6 +173,10 @@ void int_install() {
 	gdt[0] = 0;
 	gdt_set_entry(1, 0, 0xfffff, GDT_FLAG_SEGMENT | GDT_FLAG_32BIT | GDT_FLAG_CODE | GDT_FLAG_4K | GDT_FLAG_PRESENT | GDT_FLAG_RING0);
 	gdt_set_entry(2, 0, 0xfffff, GDT_FLAG_SEGMENT | GDT_FLAG_32BIT | GDT_FLAG_DATA | GDT_FLAG_4K | GDT_FLAG_PRESENT | GDT_FLAG_RING0);
+	gdt_set_entry(3, 0, 0xfffff, GDT_FLAG_SEGMENT | GDT_FLAG_32BIT | GDT_FLAG_CODE | GDT_FLAG_4K | GDT_FLAG_PRESENT | GDT_FLAG_RING3);
+	gdt_set_entry(4, 0, 0xfffff, GDT_FLAG_SEGMENT | GDT_FLAG_32BIT | GDT_FLAG_DATA | GDT_FLAG_4K | GDT_FLAG_PRESENT | GDT_FLAG_RING3);
+	gdt_set_entry(5, (unsigned long) tss, sizeof(tss), GDT_FLAG_TSS | GDT_FLAG_PRESENT | GDT_FLAG_RING3);
+
 	// load it
 	asm volatile("lgdt %0" : : "m" (gdt_pointer));
 	asm volatile(
@@ -182,6 +187,7 @@ void int_install() {
 		"ljmp $0x8, $.1;"
 		".1:"
 	);
+	asm volatile("ltr %%ax" : : "a" (5 << 3));
 
 	// move the irqs
 	outb(0x20, 0x11);
@@ -267,6 +273,7 @@ struct cpu_state* int_handler(struct cpu_state* cpu) {
 
 		if(cpu->int_no == 32) {
 			new_state = schedule(cpu);
+			tss[1] = (unsigned long) (new_state + 1);
 		}
 
 		// send an EOI (end of interrupt)
