@@ -59,6 +59,10 @@ struct cpu_state* handle_syscall(struct cpu_state* cpu) {
 
 			break;
 		}
+		case SYSCALL_EXEC: {
+			cpu = exec_current_task();
+			break;
+		}
 	}
 
 	return cpu;

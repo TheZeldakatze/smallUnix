@@ -12,7 +12,8 @@
 #include <utils.h>
 #include <console.h>
 
-
+// predefines
+struct task_t *load_program(void* start, void* end, struct task_t* old_task);
 
 static void task_idle() {
 	while(1) {
@@ -24,6 +25,9 @@ static void task_idle() {
 static int NEXT_PID = 1;
 
 struct task_t *first_task, *current_task;
+
+// TODO remove
+static void *task2_start, *task2_end;
 
 struct task_t *create_task(void* entry) {
 	struct task_t *new_task   = pmm_alloc();
@@ -65,10 +69,21 @@ struct task_t *create_task(void* entry) {
 	new_task->next = first_task;
 	first_task = new_task;
 
-	// add created pages to the page list
-	//task_addPageToPagelist(new_task, (void*) stack);
-
 	return new_task;
+}
+
+static inline struct cpu_state *schedule_next_program() {
+	// advance in the list
+	if(current_task->next != (void*) 0)
+		current_task = current_task->next;
+	else
+		current_task = first_task;
+
+	if(current_task->is_forked) {
+		kmemswap(current_task->user_stack, current_task->parent->user_stack, 4096);
+	}
+
+	return current_task->state;
 }
 
 static void deconstruct_task(struct task_t *task) {
@@ -116,10 +131,12 @@ struct task_t* fork_current_task(struct cpu_state* current_state) {
 	struct task_t* currTask = current_task;
 	struct task_t* newTask = create_task(currTask->state->eip);
 
+	// copy the state
 	newTask->is_forked = 1;
 	newTask->parent = currTask;
 	*newTask->state = *currTask->state;
 
+	// copy the memory
 	kmemcpy(newTask->user_stack, currTask->user_stack, 0x1000);
 
 	// tell the processes which one is parent and who's child
@@ -127,6 +144,27 @@ struct task_t* fork_current_task(struct cpu_state* current_state) {
 	newTask->state->eax = 0;
 
 	return newTask;
+}
+
+struct cpu_state *exec_current_task() {
+	// if the task was forked, move everything back
+	if(current_task->is_forked) {
+		kmemcpy(current_task->parent->user_stack, current_task->user_stack, 0x1000);
+		//for(int i = 0; current_task->pagelistCounter; i++)
+		//	kmemcpy(current_task->parent->pagelist[i], current_task->pagelist[i], 0x1000);
+
+		// for this task, we need to allocate a new stack
+	}
+
+	// free the old memory
+	//for(int i = 0; current_task->pagelistCounter; i++)
+	//	pmm_free(current_task->pagelist[i]);
+
+	// load the new program
+	load_program(task2_start, task2_end, current_task);
+
+	// load the next program
+	return schedule_next_program();
 }
 
 struct cpu_state *schedule(struct cpu_state *current_state) {
@@ -140,20 +178,12 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 		current_task = first_task;
 	}
 
-	// advance in the list
-	if(current_task->next != (void*) 0)
-		current_task = current_task->next;
-	else
-		current_task = first_task;
-
-	if(current_task->is_forked) {
-		kmemswap(current_task->user_stack, current_task->parent->user_stack, 4096);
-	}
+	schedule_next_program();
 
 	return current_task->state;
 }
 
-struct task_t *load_program(void* start, void* end) {
+struct task_t *load_program(void* start, void* end, struct task_t* old_task) {
 	struct elf_header *program_header = (struct elf_header*) start;
 
 	// first we have to reserve a memory area for the elf image to be loaded to
@@ -165,6 +195,38 @@ struct task_t *load_program(void* start, void* end) {
 	if(program_header->magic != ELF_MAGIC) {
 		kputs("Error loading program! Invalid elf magic");
 		return (void*) 0;
+	}
+
+	// create the task structure
+	struct task_t* task;
+	if(old_task == (void*) 0)
+		task = create_task((void*) (program_header->entry_posititon + target));
+	else {
+		task = old_task;
+		task->is_forked = 0;
+
+		kmemset(task->user_stack, 0, 4096);
+
+		struct cpu_state new_state = {
+			.eax = 0,
+			.ebx = 0,
+			.ecx = 0,
+			.edx = 0,
+			.esi = 0,
+			.edi = 0,
+			.ebp = 0,
+			.esp = (unsigned long) task->user_stack+4096,
+			.eip = (unsigned long) program_header->entry_posititon + target,
+			.cs = 0x08,
+			.eflags = 0x202,
+
+			.cs  = 0x18 | 0x03,
+			.ss  = 0x20 | 0x03,
+		};
+
+		struct cpu_state* state = (void*) (task->stack + 4096 - sizeof(new_state));
+		*state = new_state;
+		task->state = state;
 	}
 
 	// load the segments
@@ -213,8 +275,6 @@ struct task_t *load_program(void* start, void* end) {
 		}
 	}*/
 
-	// now create the task itself
-	struct task_t* task = create_task((void*) (program_header->entry_posititon + target));
 	//task_addPageToPagelist_range(task, target, pagesUsed);
 
 	return task;
@@ -224,7 +284,17 @@ void init_multitasking(struct multiboot *mb) {
 	create_task((void*) task_idle);
 	//create_task((void*) task_b);
 	struct multiboot_module* mod = mb->mods_addr;
-		load_program((void*) mod[0].start, (void*) mod[0].end);
-		//load_program((void*) mod[1].start, (void*) mod[1].end);
+		load_program((void*) mod[0].start, (void*) mod[0].end, (void*) 0);
+
+		// TODO REMOVE!
+		task2_start = (void*) mod[1].start;
+		task2_end   = (void*) mod[1].end;
+		int size = 16;
+		void *target = pmm_alloc_range(size);
+		kmemcpy(target, task2_start, task2_end-task2_start);
+		task2_start = target;
+		task2_end = size*4096 + task2_start;
+
+		//load_program((void*) mod[1].start, (void*) mod[1].end, (void*) 0);
 		//load_program((void*) mod[0].start, (void*) mod[0].end);
 }

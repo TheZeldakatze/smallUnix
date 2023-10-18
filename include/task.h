@@ -29,5 +29,6 @@ void init_multitasking(struct multiboot *mb);
 extern struct cpu_state *kill_current_task();
 extern int get_current_task_pid();
 extern struct task_t* fork_current_task(struct cpu_state* current_state);
+extern struct cpu_state *exec_current_task();
 
 #endif /* INCLUDE_TASK_H_ */

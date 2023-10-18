@@ -256,7 +256,9 @@ void int_install() {
 	asm volatile("lidt %0" : : "m" (idt_pointer));
 }
 
-
+inline void updateTSStoState(struct cpu_state *s) {
+	tss[1] = (unsigned long) (s + 1);
+}
 
 struct cpu_state* int_handler(struct cpu_state* cpu) {
 	struct cpu_state* new_state = cpu;
@@ -285,8 +287,8 @@ struct cpu_state* int_handler(struct cpu_state* cpu) {
 
 	// syscall
 	if(cpu->int_no == 48) {
-
 		new_state = handle_syscall(cpu);
+		tss[1] = (unsigned long) (new_state + 1);
 	}
 
 	return new_state;

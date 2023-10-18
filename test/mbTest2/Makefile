@@ -18,6 +18,6 @@ mbTest2.bin: $(OBJS)
 	$(CC) $(CFLAGS) -c -o $@ $^
 
 clean:
-	rm $(OBJS) mbTest1.bin
+	rm $(OBJS) mbTest2.bin
 
 .PHONY: clean

@@ -14,6 +14,7 @@
 #define SYSCALL_WRITE 3
 #define SYSCALL_OPEN 4
 #define SYSCALL_CLOSE 5
+#define SYSCALL_EXEC 6
 
 struct cpu_state* handle_syscall(struct cpu_state* cpu);
 

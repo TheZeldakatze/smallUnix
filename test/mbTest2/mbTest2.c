@@ -11,37 +11,17 @@
 #define SYSCALL_WRITE 3
 #define SYSCALL_OPEN 4
 #define SYSCALL_CLOSE 5
-#define SYSCALL_EXEC 6
 
 extern void exit(int code);
 extern int write(int fd, const void *buf, int count);
 extern int read(int fd, void *buf, int count);
-extern int exec(char* path);
 
 int i = 0;
 
 int main() {
-	write(0, "HELLO WORLD! now with write ... \n", 33);
-	int num = write(1, "Reading what read() will return for now:\n", 41);
-
-	char buf[30];
-	int count = read(1, &buf, 30);
-	write(1, buf, count);
-
-	write(0, "forking...\n", 11);
-	int res = fork();
-	write(0, "forked...\n", 10);
-	if(res == 0) {
-		write(0, "I'm a child!\n", 13);
-		exec("");
-	} else {
-		write(0, "I'm a parent!\n", 14);
-		while(1);
-	}
-
-	//asm volatile("int $48" : : "a" (SYSCALL_EXIT), "b" (0));
+	write(0, "This is the second test program!\n", 32);
+	while(1);
 	exit(0);
-	write(0, "HELLO WORLD! now with write ... \n", 33);
 }
 
 int fork() {
@@ -57,24 +37,6 @@ int fork() {
 	asm volatile("movl %%eax, %0" : "=r"(ret));
 
 	// restore the registers
-	asm volatile("pop %eax");
-
-	return ret;
-}
-
-int exec(char* path) {
-	// save the registers
-	asm volatile("push %eax");
-	asm volatile("push %ebx");
-
-	asm volatile("int $48" : : "a" (SYSCALL_EXEC), "b" (path));
-
-	// get the return value
-	int ret = 0;
-	asm volatile("movl %%eax, %0" : "=r"(ret));
-
-	// restore the registers
-	asm volatile("pop %ebx");
 	asm volatile("pop %eax");
 
 	return ret;
