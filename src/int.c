@@ -256,10 +256,6 @@ void int_install() {
 	asm volatile("lidt %0" : : "m" (idt_pointer));
 }
 
-inline void updateTSStoState(struct cpu_state *s) {
-	tss[1] = (unsigned long) (s + 1);
-}
-
 struct cpu_state* int_handler(struct cpu_state* cpu) {
 	struct cpu_state* new_state = cpu;
 

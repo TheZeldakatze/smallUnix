@@ -18,7 +18,7 @@ extern int write(int fd, const void *buf, int count);
 extern int read(int fd, void *buf, int count);
 extern int exec(char* path);
 
-int i = 0;
+int i = 0, j = 0;
 
 int main() {
 	write(0, "HELLO WORLD! now with write ... \n", 33);
@@ -28,20 +28,37 @@ int main() {
 	int count = read(1, &buf, 30);
 	write(1, buf, count);
 
+	i = 0;
+	j = 0;
+	putc('0' + i++);
+	putc('0' + i++);
+	putc('0' + i++);
+	putc('0' + i++);
+
 	write(0, "forking...\n", 11);
 	int res = fork();
 	write(0, "forked...\n", 10);
 	if(res == 0) {
 		write(0, "I'm a child!\n", 13);
+		putc('0' + i++);
+		putc('0' + j++);
 		exec("");
 	} else {
 		write(0, "I'm a parent!\n", 14);
+		putc('0' + i++);
+		putc('0' + j++);
 		while(1);
 	}
 
 	//asm volatile("int $48" : : "a" (SYSCALL_EXIT), "b" (0));
 	exit(0);
 	write(0, "HELLO WORLD! now with write ... \n", 33);
+}
+
+void putc(char* c) {
+	char s[1];
+	s[0] = c;
+	write(1, s, 1);
 }
 
 int fork() {

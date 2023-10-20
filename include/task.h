@@ -10,13 +10,24 @@
 
 #include <main.h>
 
+#define TASK_PAGE_LIST_NODE_SIZE ( (4096-(sizeof((void*)))) / sizeof(void*)  - 1)
+
+struct forked_task_page {
+	void* runLocation;
+	void* storeLocation;
+};
+
 struct task_t {
 	int pid;
 	unsigned char* stack;
 	unsigned char* user_stack;
 	struct cpu_state *state;
-	void **pagelist;
-	long pagelistCounter;
+
+	void** pageList;
+	unsigned char pageListLength; /* in 4kb-Pages */
+	struct forked_task_page* forkedPages;
+	unsigned char forkedPageListLength;
+
 	struct task_t *parent;
 	unsigned char is_forked;
 	struct task_t *next;

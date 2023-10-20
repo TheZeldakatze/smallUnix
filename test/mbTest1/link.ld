@@ -3,8 +3,8 @@ OUTPUT_FORMAT(elf32-i386)
 
 SECTIONS
 {
-	/* the program should be linked to 2MB */
-	. = 0x200000;
+	/* the program should be linked to 256kB */
+	. = 0x100;
 	
 	
 	

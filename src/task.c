@@ -59,8 +59,11 @@ struct task_t *create_task(void* entry) {
 	new_task->stack = stack;
 	new_task->user_stack = user_stack;
 	new_task->pid   = NEXT_PID++;
-	new_task->pagelist = pmm_alloc();
-	new_task->pagelistCounter = 0;
+
+	new_task->pageList = pmm_alloc();
+	new_task->pageListLength = 1;
+	new_task->forkedPageListLength = 0;
+	kmemset(new_task->pageList, 0, 4096);
 
 	new_task->parent = (void*) 0;
 	new_task->is_forked = 0;
@@ -79,8 +82,19 @@ static inline struct cpu_state *schedule_next_program() {
 	else
 		current_task = first_task;
 
+	// if the current program is forked, it expects the stack at the exact same position as the parent
+	// so we'll swap it whilst the process is loaded and swap it back afterwards
 	if(current_task->is_forked) {
 		kmemswap(current_task->user_stack, current_task->parent->user_stack, 4096);
+
+		/* swap the memory of the program */
+		if(current_task->forkedPageListLength > 0) {
+			for(int i = 0; i<((current_task->forkedPageListLength * 4096) / sizeof(struct forked_task_page)) - 1; i++) {
+				if(current_task->forkedPages[i].runLocation != (void*) 0) {
+					kmemswap(current_task->forkedPages[i].runLocation, current_task->forkedPages[i].storeLocation, 4096);
+				}
+			}
+		}
 	}
 
 	return current_task->state;
@@ -123,6 +137,43 @@ struct cpu_state *kill_current_task() {
 	return current_task->state;
 }
 
+inline static void forkedPages_addAndCopyPage(struct task_t *task, void* runLocation) {
+	// add the pages to the forked pages list
+	unsigned char found = 0;
+	while(found == 0) {
+		for(int j = 0; j<((task->forkedPageListLength * 4096) / sizeof(struct forked_task_page)) - 1; j++) {
+			if(task->forkedPages[j].runLocation == (void*) 0) {
+				// found a slot for a page
+				found = 1;
+
+				// write the page and copy it to the store location
+				void* storeLocation = pmm_alloc();
+				task->forkedPages[j].runLocation = runLocation;
+				task->forkedPages[j].storeLocation = storeLocation;
+				kmemcpy(storeLocation, runLocation, 4096);
+
+				return;
+			}
+		}
+
+		// if found == 0, the forked pages array is full
+		// TODO move and copy
+		if(found == 0) {
+			// copy to a new array
+			struct forked_task_page* newForkedPageList = pmm_alloc_range(task->forkedPageListLength+1);
+			kmemcpy(newForkedPageList, task->forkedPages, task->forkedPageListLength);
+
+			// free the old array
+			for(int i = 0; i<task->forkedPageListLength; i++) {
+				pmm_free(task->forkedPages + i * 4096);
+			}
+
+			task->forkedPages = newForkedPageList;
+			task->forkedPageListLength++;
+		}
+	}
+}
+
 struct task_t* fork_current_task(struct cpu_state* current_state) {
 	// save the current task
 	*current_task->state = *current_state;
@@ -136,8 +187,31 @@ struct task_t* fork_current_task(struct cpu_state* current_state) {
 	newTask->parent = currTask;
 	*newTask->state = *currTask->state;
 
-	// copy the memory
+	// create the forked memory store area
+	newTask->forkedPages = pmm_alloc();
+	newTask->forkedPageListLength = 1;
+	kmemset(newTask->forkedPages, 0, 4096);
+
+	// copy the stack
 	kmemcpy(newTask->user_stack, currTask->user_stack, 0x1000);
+
+	// copy the memory over into the forked memory area
+	for(int i = 0; i<((currTask->pageListLength * 4096) / sizeof(void*)) - 1; i++) {
+		if(currTask->pageList[i] != ((void*) 0)) {
+				forkedPages_addAndCopyPage(newTask, currTask->pageList[i]);
+		}
+	}
+
+	// copy the forked memory
+	if(currTask->forkedPageListLength > 0) {
+		for(int i = 0; i<((currTask->forkedPageListLength * 4096) / sizeof(struct forked_task_page)) - 1; i++) {
+			if(currTask->forkedPages[i].runLocation != (void*) 0) {
+
+				// since the task is currently loaded, we can copy from the run location
+				forkedPages_addAndCopyPage(newTask, currTask->forkedPages[i].runLocation);
+			}
+		}
+	}
 
 	// tell the processes which one is parent and who's child
 	currTask->state->eax = newTask->pid;
@@ -152,8 +226,6 @@ struct cpu_state *exec_current_task() {
 		kmemcpy(current_task->parent->user_stack, current_task->user_stack, 0x1000);
 		//for(int i = 0; current_task->pagelistCounter; i++)
 		//	kmemcpy(current_task->parent->pagelist[i], current_task->pagelist[i], 0x1000);
-
-		// for this task, we need to allocate a new stack
 	}
 
 	// free the old memory
@@ -173,6 +245,15 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 		current_task->state = current_state;
 		if(current_task->is_forked) {
 			kmemswap(current_task->user_stack, current_task->parent->user_stack, 4096);
+
+			/* copy the memory of the program */
+			if(current_task->forkedPageListLength > 0) {
+				for(int i = 0; i<((current_task->forkedPageListLength * 4096) / sizeof(struct forked_task_page)) - 1; i++) {
+					if(current_task->forkedPages[i].runLocation != (void*) 0) {
+						kmemswap(current_task->forkedPages[i].runLocation, current_task->forkedPages[i].storeLocation, 4096);
+					}
+				}
+			}
 		}
 	} else {
 		current_task = first_task;
@@ -185,9 +266,31 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 
 struct task_t *load_program(void* start, void* end, struct task_t* old_task) {
 	struct elf_header *program_header = (struct elf_header*) start;
+	struct elf_program_header_entry *program_header_entry = (void*) (start + program_header->program_header_tbl_offset);
+
+
+	// we first have to go over the elf_structure to get the memory requirements
+	void *targetEndAddr = (void*) 0;
+	for(int i = 0; i<program_header->program_header_entry_count; i++, program_header_entry++) {
+
+			// only load the LOAD segments
+			if(program_header_entry->type != ELF_PH_TYPE_LOAD)
+				continue;
+
+			// the memsize must not be smaller than the file size
+			if(program_header_entry->filesize > program_header_entry->memsize) {
+				kputs("PANIC: [ELF] filesz > memsize");
+				while(1);
+			}
+
+			void *targetSegEnd = program_header_entry->vaddr + program_header_entry->memsize;
+			if(targetEndAddr < targetSegEnd)
+				targetEndAddr = targetSegEnd;
+
+	}
 
 	// first we have to reserve a memory area for the elf image to be loaded to
-	unsigned long length = end - start;
+	unsigned long length = targetEndAddr;
 	int pagesUsed = length / 4096 + (length % 4096 != 0);
 	unsigned char *target = pmm_alloc_range(pagesUsed);
 
@@ -202,6 +305,9 @@ struct task_t *load_program(void* start, void* end, struct task_t* old_task) {
 	if(old_task == (void*) 0)
 		task = create_task((void*) (program_header->entry_posititon + target));
 	else {
+
+		// we essentially have to clean up the task and create a new one
+		// in the same location
 		task = old_task;
 		task->is_forked = 0;
 
@@ -229,8 +335,15 @@ struct task_t *load_program(void* start, void* end, struct task_t* old_task) {
 		task->state = state;
 	}
 
+	// add the pages to the task
+	// TODO does not check if the limit of pages has been reached
+	for(int i = 0; i<pagesUsed; i++) {
+		void* currentPage = target + i*4096;
+		task->pageList[i] = currentPage;
+	}
+
 	// load the segments
-	struct elf_program_header_entry *program_header_entry = (void*) (start + program_header->program_header_tbl_offset);
+	program_header_entry = (void*) (start + program_header->program_header_tbl_offset);
 	for(int i = 0; i<program_header->program_header_entry_count; i++, program_header_entry++) {
 
 		// only load the LOAD segments
@@ -250,6 +363,7 @@ struct task_t *load_program(void* start, void* end, struct task_t* old_task) {
 		kmemset(dst, 0, program_header_entry->memsize); // TODO we could make it more efficient by
 														// only setting the remainder after kmemcpy to the page end
 		kmemcpy(dst, src, program_header_entry->filesize);
+
 	}
 
 	// now fix the section table

@@ -37,3 +37,46 @@ void kmemswap(void *dest, void *src, int n) {
 		b++;
 	}
 }
+
+/*
+ * based on https://www.geeksforgeeks.org/implement-itoa/
+ * */
+void kitoa(int num, char* str) {
+	unsigned char negative = 0;
+	int stringI = 0;
+	int input = num;
+
+	/* return 0 if the number is 0 */
+	if(num == 0) {
+		str[0] = '0';
+		str[1] = '\0';
+	}
+
+	/* continue with a positive number and append the sign later */
+	if(num<0) {
+		num = -num;
+		negative = 1;
+	}
+
+	/* process the individual digit */
+	while(input != 0) {
+		int remainder = input % 10;
+		str[stringI++] = '0' + remainder;
+		input = input / 10;
+	}
+
+	if(negative == 1)
+		str[stringI++] = '-';
+
+	str[stringI] = '\0';
+
+	// reverse the string
+	int s = 0, e = stringI-1;
+	while(s<e) {
+		char t = str[s];
+		str[s] = str[e];
+		str[e] = t;
+		e--;
+		s++;
+	}
+}
