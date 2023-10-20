@@ -20,6 +20,16 @@ int i = 0;
 
 int main() {
 	write(0, "This is the second test program!\n", 32);
+	for(int i = 0; i<10; i++) {
+		int res = fork();
+		if(res == 0) {
+			write(1, "Hello World!\n", 14);
+			res = fork();
+			if(res == 0)
+				write(1, "Hello World, again!\n", 21);
+			while(1);
+		}
+	}
 	while(1);
 	exit(0);
 }

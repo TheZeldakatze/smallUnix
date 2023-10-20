@@ -22,9 +22,9 @@ static void task_idle() {
 	}
 }
 
-static int NEXT_PID = 1;
+static int NEXT_PID = 0;
 
-struct task_t *first_task, *current_task;
+struct task_t *first_task, *current_task, *destroyTaskQueue;
 
 // TODO remove
 static void *task2_start, *task2_end;
@@ -75,12 +75,95 @@ struct task_t *create_task(void* entry) {
 	return new_task;
 }
 
-static inline struct cpu_state *schedule_next_program() {
+static void mark_destroy_task(struct task_t *task) {
+	// append this task to the to-be-destroyed queue
+	task->next = destroyTaskQueue;
+	destroyTaskQueue = task;
+
+	/* kill every child */
+	struct task_t* t = first_task;
+	while(t != ((void*) 0)) {
+		if(t->parent == task) {
+			/* remove it from the list */
+			if(t == first_task) {
+				first_task = t->next;
+			} else {
+				// find the previous task
+				struct task_t *previous_task = first_task;
+				while(previous_task->next != t) {
+					previous_task = previous_task->next;
+				}
+
+				// cut it out of the list
+				previous_task->next = t->next;
+			}
+
+			/* we're doing a recursive call... */
+			mark_destroy_task(t);
+
+			t = first_task;
+		}
+		else
+			t = t->next;
+	}
+}
+
+static void destroy_tasks() {
+	/* if the queue is empty, return */
+	if(destroyTaskQueue == ((void*) 0))
+		return;
+
+	struct task_t *task = destroyTaskQueue;
+	while(!(task == ((void*) 0))) {
+		/* free the stacks */
+		pmm_free(task->stack);
+		pmm_free(task->user_stack);
+
+		/* free the memory */
+		for(int i = 0; i<((task->pageListLength * 4096) / sizeof(void*)); i++) {
+			if(!(task->pageList[i] == ((void*) 0))) {
+				pmm_free(task->pageList[i]);
+			}
+		}
+		for(int i = 0; i<task->pageListLength;i++) {
+			pmm_free(task->pageList + 4096*i);
+		}
+
+		// copy back and free the forked pages
+		if(task->forkedPageListLength > 0) {
+			for(int i = 0; i<((task->forkedPageListLength * 4096) / sizeof(struct forked_task_page)) - 1; i++) {
+				if(task->forkedPages[i].runLocation != (void*) 0) {
+					kmemcpy(task->forkedPages[i].runLocation, task->forkedPages[i].storeLocation, 4096);
+					pmm_free(task->forkedPages[i].storeLocation);
+				}
+			}
+			for(int i = 0; i<task->forkedPageListLength;i++) {
+				pmm_free(task->forkedPages + 4096*i);
+			}
+		}
+
+		// free the structure itself
+		struct task *next = task->next;
+		pmm_free(task);
+		task = next;
+		destroyTaskQueue = next;
+	}
+}
+
+int get_current_task_pid() {
+	return current_task->pid;
+}
+
+static inline struct cpu_state *schedule_next_program(unsigned char destroyOldTasks) {
 	// advance in the list
 	if(current_task->next != (void*) 0)
 		current_task = current_task->next;
 	else
 		current_task = first_task;
+
+	// now clean up the old tasks
+	if(destroyOldTasks == 1)
+		destroy_tasks();
 
 	// if the current program is forked, it expects the stack at the exact same position as the parent
 	// so we'll swap it whilst the process is loaded and swap it back afterwards
@@ -100,14 +183,6 @@ static inline struct cpu_state *schedule_next_program() {
 	return current_task->state;
 }
 
-static void deconstruct_task(struct task_t *task) {
-	// TODO
-}
-
-int get_current_task_pid() {
-	return current_task->pid;
-}
-
 struct cpu_state *kill_current_task() {
 	struct task_t *old_task = current_task;
 	if(first_task == current_task) {
@@ -125,16 +200,14 @@ struct cpu_state *kill_current_task() {
 		previous_task->next = current_task->next;
 	}
 
-	// advance in the list
-	if(current_task->next != (void*) 0)
-		current_task = current_task->next;
-	else
-		current_task = first_task;
-
 	// clean up the old task
-	deconstruct_task(old_task);
+	mark_destroy_task(old_task);
 
-	return current_task->state;
+
+	// run the first task
+	current_task = first_task;
+
+	return schedule_next_program(0);
 }
 
 inline static void forkedPages_addAndCopyPage(struct task_t *task, void* runLocation) {
@@ -220,7 +293,23 @@ struct task_t* fork_current_task(struct cpu_state* current_state) {
 	return newTask;
 }
 
+unsigned char task_hasChildren(struct task_t* task) {
+	struct task_t* t = first_task;
+	while(t != ((void*) 0)) {
+		if(t->parent == task) {
+			return 1;
+		}
+
+		t = t->next;
+	}
+
+	return 0;
+}
+
 struct cpu_state *exec_current_task() {
+	if(task_hasChildren(current_task))
+		return (void*) 0;
+
 	// if the task was forked, move everything back
 	if(current_task->is_forked) {
 		kmemcpy(current_task->parent->user_stack, current_task->user_stack, 0x1000);
@@ -229,14 +318,32 @@ struct cpu_state *exec_current_task() {
 	}
 
 	// free the old memory
-	//for(int i = 0; current_task->pagelistCounter; i++)
-	//	pmm_free(current_task->pagelist[i]);
+
+	for(int i = 0; i<((current_task->pageListLength * 4096) / sizeof(void*)); i++) {
+		if(!(current_task->pageList[i] == ((void*) 0))) {
+			pmm_free(current_task->pageList[i]);
+		}
+	}
+
+	// copy back and free the forked pages
+	if(current_task->forkedPageListLength > 0) {
+		for(int i = 0; i<((current_task->forkedPageListLength * 4096) / sizeof(struct forked_task_page)) - 1; i++) {
+			if(current_task->forkedPages[i].runLocation != (void*) 0) {
+				kmemcpy(current_task->forkedPages[i].runLocation, current_task->forkedPages[i].storeLocation, 4096);
+				pmm_free(current_task->forkedPages[i].storeLocation);
+
+				// remove the reference
+				current_task->forkedPages[i].runLocation   = (void*) 0;
+				current_task->forkedPages[i].storeLocation = (void*) 0;
+			}
+		}
+	}
 
 	// load the new program
 	load_program(task2_start, task2_end, current_task);
 
 	// load the next program
-	return schedule_next_program();
+	return schedule_next_program(0);
 }
 
 struct cpu_state *schedule(struct cpu_state *current_state) {
@@ -259,7 +366,7 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 		current_task = first_task;
 	}
 
-	schedule_next_program();
+	schedule_next_program(1);
 
 	return current_task->state;
 }
@@ -396,6 +503,7 @@ struct task_t *load_program(void* start, void* end, struct task_t* old_task) {
 
 void init_multitasking(struct multiboot *mb) {
 	create_task((void*) task_idle);
+
 	//create_task((void*) task_b);
 	struct multiboot_module* mod = mb->mods_addr;
 		load_program((void*) mod[0].start, (void*) mod[0].end, (void*) 0);

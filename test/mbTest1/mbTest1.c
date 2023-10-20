@@ -47,7 +47,7 @@ int main() {
 		write(0, "I'm a parent!\n", 14);
 		putc('0' + i++);
 		putc('0' + j++);
-		while(1);
+		for(int i = 0; i<100000000; i++);
 	}
 
 	//asm volatile("int $48" : : "a" (SYSCALL_EXIT), "b" (0));

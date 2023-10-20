@@ -8,10 +8,15 @@
 #include <syscall.h>
 #include <task.h>
 
+extern struct task_t *current_task;
+
 struct cpu_state* handle_syscall(struct cpu_state* cpu) {
 	switch(cpu->eax) {
 		case SYSCALL_EXIT: { // exit
-			kputs("A task exited!");
+			char buf[100];
+			kitoa(current_task->pid, &buf);
+			kputs(buf);
+			kputs(" has finished!");
 			return kill_current_task();
 		}
 		case SYSCALL_FORK: {
@@ -60,7 +65,12 @@ struct cpu_state* handle_syscall(struct cpu_state* cpu) {
 			break;
 		}
 		case SYSCALL_EXEC: {
-			cpu = exec_current_task();
+			struct cpu *ret = exec_current_task();
+			if(ret == ((void*) 0))
+				cpu->eax = -1;
+			else {
+				cpu = ret;
+			}
 			break;
 		}
 	}
