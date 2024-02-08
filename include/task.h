@@ -8,6 +8,14 @@
 #ifndef INCLUDE_TASK_H_
 #define INCLUDE_TASK_H_
 
+#define TASK_RUN_STATE_RUNNING  0
+#define TASK_RUN_STATE_SLEEPING 1
+#define TASK_RUN_STATE_ZOMBIE   2
+#define TASK_RUN_STATE_WAITEXEC 3
+#define TASK_RUN_STATE_IDLETASK 4
+#define TASK_RUN_STATE_WAITPID  5
+#define TASK_RUN_STATE_DECONSTRUCT 6
+
 #include <main.h>
 
 #define TASK_PAGE_LIST_NODE_SIZE ( (4096-(sizeof((void*)))) / sizeof(void*)  - 1)
@@ -18,7 +26,7 @@ struct forked_task_page {
 };
 
 struct task_t {
-	int pid;
+	int pid, run_state;
 	unsigned char* stack;
 	unsigned char* user_stack;
 	struct cpu_state *state;

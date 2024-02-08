@@ -12,5 +12,6 @@ extern void kmemcpy(void *dest, void *src, int n);
 extern void kmemset(void *dest, unsigned char val, int n);
 extern void kmemswap(void *dest, void *src, int n);
 extern void kitoa(int num, char* str);
+extern void kputn(int n);
 
 #endif /* INCLUDE_UTILS_H_ */

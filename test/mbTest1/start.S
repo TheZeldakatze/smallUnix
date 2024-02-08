@@ -17,7 +17,7 @@ exit:
 	pop %ebx
 	mov $0, %eax
 	int $48
-
+	push $0
 	jmp exit
 
 .section .text

@@ -80,3 +80,9 @@ void kitoa(int num, char* str) {
 		s++;
 	}
 }
+
+kputn(int n) {
+	char *buf[30];
+	kitoa(n, buf);
+	kputs(buf);
+}

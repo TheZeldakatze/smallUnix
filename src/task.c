@@ -1,33 +1,39 @@
-/*
- * task.c
- *
- *  Created on: 19.10.2022
- *      Author: maite
- */
-
-#include <console.h>
+#include <main.h>
 #include <task.h>
 #include <pmm.h>
-#include <elf.h>
 #include <utils.h>
 #include <console.h>
+#include <elf.h>
 
-// predefines
+/* predefines */
 struct task_t *load_program(void* start, void* end, struct task_t* old_task);
-
 static void task_idle() {
-	while(1) {
-		//asm("int $0x30" : : "a" (0), "b" ('0'));
-		for(int i = 0; i<10000000;i++);
-	}
+	while(1);
 }
 
-static int NEXT_PID = 0;
+static int NEXT_PID = 1;
 
-struct task_t *first_task, *current_task, *destroyTaskQueue;
+struct task_t *first_task, *current_task;
 
 // TODO remove
 static void *task2_start, *task2_end;
+
+void task_debug_printTaskList() {
+	kputs("\ntask list:\nid, run_state, parent\n");
+	struct task_t *t = first_task;
+	do {
+		char buf[10];
+		kitoa(t->pid, buf);
+		kputs(buf);
+		kputs(" ");
+		kitoa(t->run_state, buf);
+		kputs(buf);
+		kputs(" ");
+		kitoa((t->parent != (void*) 0 ? t->parent->pid : -1), buf);
+		kputs(buf);
+		kputs("\n");
+	} while((t = t->next) != (void*) 0);
+}
 
 struct task_t *create_task(void* entry) {
 	struct task_t *new_task   = pmm_alloc();
@@ -65,6 +71,7 @@ struct task_t *create_task(void* entry) {
 	new_task->forkedPageListLength = 0;
 	kmemset(new_task->pageList, 0, 4096);
 
+	new_task->run_state = TASK_RUN_STATE_SLEEPING;
 	new_task->parent = (void*) 0;
 	new_task->is_forked = 0;
 
@@ -75,95 +82,123 @@ struct task_t *create_task(void* entry) {
 	return new_task;
 }
 
-static void mark_destroy_task(struct task_t *task) {
-	// append this task to the to-be-destroyed queue
-	task->next = destroyTaskQueue;
-	destroyTaskQueue = task;
-
-	/* kill every child */
-	struct task_t* t = first_task;
-	while(t != ((void*) 0)) {
+void task_zombiefy_children(struct task_t *task) {
+	struct task_t *t = first_task;
+	do {
 		if(t->parent == task) {
-			/* remove it from the list */
-			if(t == first_task) {
-				first_task = t->next;
-			} else {
-				// find the previous task
-				struct task_t *previous_task = first_task;
-				while(previous_task->next != t) {
-					previous_task = previous_task->next;
-				}
+			/* zombify it */
+			t->run_state = TASK_RUN_STATE_ZOMBIE;
 
-				// cut it out of the list
-				previous_task->next = t->next;
-			}
-
-			/* we're doing a recursive call... */
-			mark_destroy_task(t);
-
-			t = first_task;
+			/* the child's children have to be zombiefied aswell */
+			task_zombiefy_children(t);
+			// TODO why does the function not return to here!?!
 		}
-		else
-			t = t->next;
+
+		t = t->next;
+	} while(t != (void*) 0);
+}
+
+/* assumes that the task is not loaded */
+static void deconstruct_task(struct task_t *task) {
+	/* free the pages */
+	for(int i = 0; i<((task->pageListLength * 4096) / sizeof(void*)); i++) {
+		if(!(task->pageList[i] == ((void*) 0))) {
+			pmm_free(task->pageList[i]);
+		}
+	}
+
+	/* free the pagelist */
+	for(long i = 0; i<task->pageListLength; i++)
+		pmm_free((void*) ((long) task->pageList + i*4096));
+
+	/* free the stack */
+	pmm_free(task->stack);
+	pmm_free(task->user_stack);
+
+	/* free the forked pages */
+	if(current_task->is_forked) {
+		for(int i = 0; i<((current_task->forkedPageListLength * 4096) / sizeof(struct forked_task_page)) - 1; i++) {
+			if(current_task->forkedPages[i].runLocation != (void*) 0) {
+				pmm_free(current_task->forkedPages[i].storeLocation);
+			}
+		}
+
+		/* free the forked page list */
+		for(long i = 0; i<task->forkedPageListLength; i++)
+				pmm_free((void*) ((long) task->forkedPages + i*4096));
 	}
 }
 
-static void destroy_tasks() {
-	/* if the queue is empty, return */
-	if(destroyTaskQueue == ((void*) 0))
-		return;
-
-	struct task_t *task = destroyTaskQueue;
-	while(!(task == ((void*) 0))) {
-		/* free the stacks */
-		pmm_free(task->stack);
-		pmm_free(task->user_stack);
-
-		/* free the memory */
-		for(int i = 0; i<((task->pageListLength * 4096) / sizeof(void*)); i++) {
-			if(!(task->pageList[i] == ((void*) 0))) {
-				pmm_free(task->pageList[i]);
-			}
-		}
-		for(int i = 0; i<task->pageListLength;i++) {
-			pmm_free(task->pageList + 4096*i);
-		}
-
-		// copy back and free the forked pages
-		if(task->forkedPageListLength > 0) {
-			for(int i = 0; i<((task->forkedPageListLength * 4096) / sizeof(struct forked_task_page)) - 1; i++) {
-				if(task->forkedPages[i].runLocation != (void*) 0) {
-					kmemcpy(task->forkedPages[i].runLocation, task->forkedPages[i].storeLocation, 4096);
-					pmm_free(task->forkedPages[i].storeLocation);
-				}
-			}
-			for(int i = 0; i<task->forkedPageListLength;i++) {
-				pmm_free(task->forkedPages + 4096*i);
-			}
-		}
-
-		// free the structure itself
-		struct task *next = task->next;
-		pmm_free(task);
-		task = next;
-		destroyTaskQueue = next;
-	}
-}
-
-int get_current_task_pid() {
-	return current_task->pid;
-}
-
-static inline struct cpu_state *schedule_next_program(unsigned char destroyOldTasks) {
+static inline struct cpu_state *schedule_next_program() {
+	struct task_t *oldTask = current_task;
 	// advance in the list
-	if(current_task->next != (void*) 0)
-		current_task = current_task->next;
-	else
-		current_task = first_task;
+	char searching = 1, idle_task_found = 0;
+	while(searching) {
+		/* go to the next program */
+		if(current_task->next != (void*) 0)
+			current_task = current_task->next;
+		else
+			current_task = first_task;
 
-	// now clean up the old tasks
-	if(destroyOldTasks == 1)
-		destroy_tasks();
+		/* check the state */
+		switch(current_task->run_state) {
+			/* should not happen, show a warning */
+			case TASK_RUN_STATE_RUNNING:
+				char buf[20];
+				kitoa(current_task->pid, (char*) &buf);
+				kputs("Warn: task ");
+				kputs(buf);
+				kputs(" was in TASK_RUN_STATE_RUNNING\n");
+				/* no break */
+			case TASK_RUN_STATE_SLEEPING:
+				searching = 0;
+				break;
+			case TASK_RUN_STATE_IDLETASK:
+				/* if the idle task is the only one
+				* avaiable, use that */
+				if(idle_task_found == 1)
+					searching = 1;
+				idle_task_found = 1;
+				break;
+			case TASK_RUN_STATE_DECONSTRUCT:
+				/* make sure that the task is not loaded */
+				if(current_task != oldTask) {
+					kitoa(current_task->pid, (char*) &buf);
+					kputs("Deconstructing Task ");
+
+					/* cut the old task out of the list */
+					struct task_t *toBeDeconstructedTask = current_task;
+					if(first_task == toBeDeconstructedTask)
+						first_task = toBeDeconstructedTask->next;
+					else {
+						/* find the previous task */
+						struct task_t *prev = first_task;
+						do {
+							if(prev->next == current_task) {
+								prev->next = toBeDeconstructedTask->next;
+								break;
+							}
+						} while((prev = prev->next) != (void*) 0);
+					}
+
+					/* advance in the list */
+					if(toBeDeconstructedTask->next == (void*) 0)
+						current_task = first_task;
+					else
+						current_task = current_task->next;
+
+					/* remove the task */
+					deconstruct_task(current_task);
+				} else
+					kputs("can't clean task!");
+
+				searching = 1;
+				break;
+
+			case TASK_RUN_STATE_ZOMBIE:
+				break;
+		}
+	}
 
 	// if the current program is forked, it expects the stack at the exact same position as the parent
 	// so we'll swap it whilst the process is loaded and swap it back afterwards
@@ -180,34 +215,20 @@ static inline struct cpu_state *schedule_next_program(unsigned char destroyOldTa
 		}
 	}
 
+	kputs("Next task: ");kputn(current_task->pid);
+	if(current_task->run_state != TASK_RUN_STATE_IDLETASK)
+		current_task->run_state = TASK_RUN_STATE_RUNNING;
 	return current_task->state;
 }
 
+int get_current_task_pid() {
+	return current_task->pid;
+}
+
 struct cpu_state *kill_current_task() {
-	struct task_t *old_task = current_task;
-	if(first_task == current_task) {
-		// cut it out of the list
-		first_task = current_task->next;
-	} else {
-
-		// find the previous task
-		struct task_t *previous_task = first_task;
-		while(previous_task->next != current_task) {
-			previous_task = previous_task->next;
-		}
-
-		// cut it out of the list
-		previous_task->next = current_task->next;
-	}
-
-	// clean up the old task
-	mark_destroy_task(old_task);
-
-
-	// run the first task
-	current_task = first_task;
-
-	return schedule_next_program(0);
+	current_task->run_state = TASK_RUN_STATE_ZOMBIE;
+	task_zombiefy_children(current_task);
+	return schedule((void*) 0);
 }
 
 inline static void forkedPages_addAndCopyPage(struct task_t *task, void* runLocation) {
@@ -293,31 +314,13 @@ struct task_t* fork_current_task(struct cpu_state* current_state) {
 	return newTask;
 }
 
-unsigned char task_hasChildren(struct task_t* task) {
-	struct task_t* t = first_task;
-	while(t != ((void*) 0)) {
-		if(t->parent == task) {
-			return 1;
-		}
-
-		t = t->next;
-	}
-
-	return 0;
-}
-
 struct cpu_state *exec_current_task() {
-	if(task_hasChildren(current_task))
-		return (void*) 0;
-
 	// if the task was forked, move everything back
 	if(current_task->is_forked) {
 		kmemcpy(current_task->parent->user_stack, current_task->user_stack, 0x1000);
 		//for(int i = 0; current_task->pagelistCounter; i++)
 		//	kmemcpy(current_task->parent->pagelist[i], current_task->pagelist[i], 0x1000);
 	}
-
-	// free the old memory
 
 	for(int i = 0; i<((current_task->pageListLength * 4096) / sizeof(void*)); i++) {
 		if(!(current_task->pageList[i] == ((void*) 0))) {
@@ -339,16 +342,21 @@ struct cpu_state *exec_current_task() {
 		}
 	}
 
+	/* find any children and make them zombies */
+	task_zombiefy_children(current_task);
+
 	// load the new program
 	load_program(task2_start, task2_end, current_task);
 
 	// load the next program
-	return schedule_next_program(0);
+	return schedule_next_program();
 }
 
 struct cpu_state *schedule(struct cpu_state *current_state) {
 	// initialize the first task switch
 	if(current_task != (void*) 0) {
+		if(current_task->run_state == TASK_RUN_STATE_RUNNING)
+			current_task->run_state = TASK_RUN_STATE_SLEEPING;
 		current_task->state = current_state;
 		if(current_task->is_forked) {
 			kmemswap(current_task->user_stack, current_task->parent->user_stack, 4096);
@@ -365,8 +373,7 @@ struct cpu_state *schedule(struct cpu_state *current_state) {
 	} else {
 		current_task = first_task;
 	}
-
-	schedule_next_program(1);
+	schedule_next_program();
 
 	return current_task->state;
 }
@@ -429,7 +436,7 @@ struct task_t *load_program(void* start, void* end, struct task_t* old_task) {
 			.edi = 0,
 			.ebp = 0,
 			.esp = (unsigned long) task->user_stack+4096,
-			.eip = (unsigned long) program_header->entry_posititon + target,
+			.eip = ((unsigned long) program_header->entry_posititon) + target,
 			.cs = 0x08,
 			.eflags = 0x202,
 
@@ -503,7 +510,6 @@ struct task_t *load_program(void* start, void* end, struct task_t* old_task) {
 
 void init_multitasking(struct multiboot *mb) {
 	create_task((void*) task_idle);
-
 	//create_task((void*) task_b);
 	struct multiboot_module* mod = mb->mods_addr;
 		load_program((void*) mod[0].start, (void*) mod[0].end, (void*) 0);
