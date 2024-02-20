@@ -27,7 +27,9 @@ void kmemswap(void *dest, void *src, int n) {
 	char *a, *b, *a_end;
 	a = (char*)dest;
 	b = (char*)src;
-	a_end = a + n;
+	a_end = (char*) (a + n);
+
+
 
 	while(a < a_end) {
 		char tmp = *a;
@@ -56,11 +58,14 @@ void kitoa(int num, char* str) {
 	if(num<0) {
 		num = -num;
 		negative = 1;
-	}
+	} else if(num == 0)
+		str[stringI++] = '0'; /* if it is 0, use the sign */
 
 	/* process the individual digit */
 	while(input != 0) {
 		int remainder = input % 10;
+		if(remainder < 0)
+			remainder = -remainder;
 		str[stringI++] = '0' + remainder;
 		input = input / 10;
 	}
@@ -81,8 +86,18 @@ void kitoa(int num, char* str) {
 	}
 }
 
-kputn(int n) {
+void kputn(int n) {
 	char *buf[30];
 	kitoa(n, buf);
 	kputs(buf);
+}
+
+inline void outb(unsigned short port, unsigned char data) {
+	asm volatile ("outb %0, %1" : : "a" (data), "Nd" (port));
+}
+
+inline unsigned char inb(unsigned short port) {
+	char ret;
+	asm volatile ("inb %1, %0" : "=a"(ret) : "Nd" (port));
+	return ret;
 }

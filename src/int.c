@@ -10,6 +10,7 @@
 #include <console.h>
 #include <task.h>
 #include <syscall.h>
+#include <utils.h>
 
 #define GDT_ENTRIES 6
 
@@ -147,9 +148,7 @@ char *exception_name[] = {
 	"Undefined"
 };
 
-static inline void outb(unsigned short port, unsigned char data) {
-	asm volatile ("outb %0, %1" : : "a" (data), "Nd" (port));
-}
+static int taskswitch_countdown;
 
 static void gdt_set_entry(int id,unsigned int base, unsigned int limit, int flags) {
 	gdt[id] = limit & 0xffffLL;
@@ -254,6 +253,9 @@ void int_install() {
 
 	// load it
 	asm volatile("lidt %0" : : "m" (idt_pointer));
+
+	// set the taskswitch countdown
+	taskswitch_countdown = 10;
 }
 
 struct cpu_state* int_handler(struct cpu_state* cpu) {
@@ -261,17 +263,28 @@ struct cpu_state* int_handler(struct cpu_state* cpu) {
 
 	// Exception
 	if(cpu->int_no < 32) {
+		kputs("EXCEPTION: \n");
 		kputs(exception_name[cpu->int_no]);
+		kputs(", Code: ");
+		kputn(cpu->error);
+		task_debug_printTaskList();
+		kputs("Current Task was: ");
+		kputn(get_current_task_pid());
+
 		asm volatile("cli; hlt");
 	}
 	else
 
 	// irq
 	if(cpu->int_no < 48) {
-
 		if(cpu->int_no == 32) {
-			new_state = schedule(cpu);
-			tss[1] = (unsigned long) (new_state + 1);
+
+			/* only do a task switch every 10th interrupt */
+			if(taskswitch_countdown-- < 0) {
+				taskswitch_countdown = 1;
+				new_state = schedule(cpu);
+				tss[1] = (unsigned long) (new_state + 1);
+			}
 		}
 
 		// send an EOI (end of interrupt)

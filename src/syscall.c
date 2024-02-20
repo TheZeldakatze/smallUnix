@@ -17,7 +17,12 @@ struct cpu_state* handle_syscall(struct cpu_state* cpu) {
 			kitoa(current_task->pid, &buf);
 			kputs(buf);
 			kputs(" has finished!");
-			return kill_current_task();
+			if(current_task->pid == 1) {
+				kputs("No remaining Task!");
+				task_debug_printTaskList();
+			}
+
+			return kill_current_task(cpu);
 		}
 		case SYSCALL_FORK: {
 			cpu->eax = fork_current_task(cpu)->pid;
@@ -71,6 +76,12 @@ struct cpu_state* handle_syscall(struct cpu_state* cpu) {
 			else {
 				cpu = ret;
 			}
+			break;
+		}
+		case SYSCALL_WAIT: {
+			current_task->waitpid_num = cpu->ebx;
+			current_task->run_state   = TASK_RUN_STATE_WAITPID;
+			cpu = schedule(cpu);
 			break;
 		}
 	}

@@ -28,13 +28,15 @@ struct forked_task_page {
 struct task_t {
 	int pid, run_state;
 	unsigned char* stack;
-	unsigned char* user_stack;
+	unsigned char* user_stack, *user_stack_run_address;
 	struct cpu_state *state;
 
 	void** pageList;
 	unsigned char pageListLength; /* in 4kb-Pages */
 	struct forked_task_page* forkedPages;
 	unsigned char forkedPageListLength;
+
+	unsigned int waitpid_num;
 
 	struct task_t *parent;
 	unsigned char is_forked;
@@ -45,7 +47,7 @@ struct task_t *create_task(void* entry);
 struct cpu_state *schedule(struct cpu_state *current_state);
 void init_multitasking(struct multiboot *mb);
 
-extern struct cpu_state *kill_current_task();
+extern struct cpu_state *kill_current_task(struct cpu_state *c);
 extern int get_current_task_pid();
 extern struct task_t* fork_current_task(struct cpu_state* current_state);
 extern struct cpu_state *exec_current_task();

@@ -6,6 +6,7 @@
  */
 
 #include <console.h>
+#include <utils.h>
 
 static char *vid_mem = (char*) 0xb8000;
 static int pos_x, pos_y;
@@ -24,12 +25,16 @@ void kputs(char* c) {
 }
 
 void kputc(char c) {
+	// works in qemu, write to serial
+	outb(0x3F8, c);
+
 	if(c != '\n') {
 		int index = pos_x + pos_y * SCREEN_WIDTH;
 		vid_mem[index * 2] = c;
 		vid_mem[index * 2 + 1] = 0x03;
 		pos_x++;
 	} else {
+		outb(0x3F8, (char) '\r');
 		pos_x = 0;
 		pos_y++;
 	}
@@ -51,4 +56,8 @@ void kputc(char c) {
 		pos_x = 0;
 
 	}
+}
+
+void serial_write(char c) {
+
 }
